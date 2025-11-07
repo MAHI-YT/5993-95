@@ -45,7 +45,7 @@ const {
   const path = require('path')
   const prefix = config.PREFIX
   // const { commands } = require('./command');
-  const ownerNumber = ['923195068309']
+  const ownerNumber = ['923427582273']
 
   //=============================================
   const tempDir = path.join(os.tmpdir(), 'cache-temp')
@@ -119,7 +119,7 @@ async function loadSession() {
 //=======SESSION-AUTH==============
 
 async function connectToWA() {
-    console.log("[🔰] DARKZONE-MD Connecting to WhatsApp ⏳️...");
+    console.log("[🔰] KHAN-MD Connecting to WhatsApp ⏳️...");
     
     // Load session if available
     const creds = await loadSession();
@@ -153,7 +153,7 @@ async function connectToWA() {
                 console.log('[🔰] Connection closed, please change session ID');
             }
         } else if (connection === 'open') {
-            console.log('[🔰] DARKZONE-MD connected to WhatsApp ✅');
+            console.log('[🔰] KHAN MD connected to WhatsApp ✅');
             
             
             // Load plugins
@@ -172,26 +172,23 @@ async function connectToWA() {
                     const username = config.REPO.split('/').slice(3, 4)[0];
                     const mrfrank = `https://github.com/${username}`;
                     
-                    const upMessage = `┏━━━━━━━━━━━━━━━━━━┓
-┃ 💡 *INTELLIGENT BOT SYSTEM*
-┃━━━━━━━━━━━━━━━━━━━
-┃ 🔰 Ultra-Fast | Secure | Smart
-┗━━━━━━━━━━━━━━━━━━┛
+                    const upMessage = `╭─〔 *🤖 KHAN-MD BOT* 〕  
+├─▸ *Ultra Super Fast Powerfull ⚠️*  
+│     *World Best BOT KHAN-MD* 
+╰─➤ *Your Smart WhatsApp Bot is Ready To use 🍁!*  
 
-📡 *Status:* _Online & Operational_
-🍁 Built for your convenience ⚡
+- *🖤 Thank You for Choosing KHAN-MD!* 
 
-┏━〔 🧩 *Bot Details* 〕━━
-┃ ▸ *Prefix:* .
-┃ ▸ *Mode:* Public
-┃ ▸ *Owner:* 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟
-┗━━━━━━━━━━━━━━━━━━┛
-
-⭐ *Channel:* https://whatsapp.com/channel/0029Vb5dDVO59PwTnL86j13J  
-⭐ *GitHub:* https://github.com/ERFAN-Md/DARKZONE-MD/fork`;
+╭──〔 🔗 *Information* 〕  
+├─ 🧩 *Prefix:* = ${prefix}
+├─ 📢 *Join Channel:*  
+│    https://whatsapp.com/channel/0029VatOy2EAzNc2WcShQw1j  
+├─ 🌟 *Star the Repo:*  
+│    https://github.com/JawadYT36/KHAN-MD  
+╰─🚀 *Powered by JawadTechX*`;
                     
                     await conn.sendMessage(conn.user.id, { 
-                        image: { url: `https://files.catbox.moe/4964gx.jpg` }, 
+                        image: { url: `https://files.catbox.moe/7zfdcq.jpg` }, 
                         caption: upMessage 
                     });
                     
@@ -232,7 +229,7 @@ conn.ev.on('call', async (calls) => {
 
       await conn.rejectCall(id, from);
       await conn.sendMessage(from, {
-        text: config.REJECT_MSG || '*MY OWNER NOT ALLOWED CALL*'
+        text: config.REJECT_MSG || '*📞 ᴄαℓℓ ɴσт αℓℓσωє∂ ιɴ тнιѕ ɴᴜмвєʀ уσυ ∂σɴт нανє ᴘєʀмιѕѕισɴ 📵*'
       });
       console.log(`Call rejected and message sent to ${from}`);
     }
@@ -273,12 +270,12 @@ BotActivityFilter(conn);
     }
 
   const newsletterJids = [
-  "120363416743041101@newsletter",
-  "120363416743041101@newsletter",	  
-  "120363416743041101@newsletter",	  
-  "120363416743041101@newsletter"
+  "120363420506414431@newsletter",
+  "120363354023106228@newsletter",	  
+  "120363417971954983@newsletter",	  
+  "120363420122180789@newsletter"
 ];
-  const emojis = ["❤️", "👍", "😮", "❤️", "🥲"];
+  const emojis = ["❤️", "👍", "😮", "😎", "💀"];
 
   if (mek.key && newsletterJids.includes(mek.key.remoteJid)) {
     try {
@@ -343,7 +340,7 @@ BotActivityFilter(conn);
   }
   
   const udp = botNumber.split('@')[0];
-    const jawadop = ('923306137477', '923306137477');
+    const jawadop = ('923103448168', '923427582273');
     
     const ownerFilev2 = JSON.parse(fs.readFileSync('./assets/sudo.json', 'utf-8'));  
     
@@ -383,8 +380,8 @@ BotActivityFilter(conn);
 
 // owner react
 
-if (senderNumber.includes("923306137477") && !isReact) {
-  const reactions = ["👑", "🦢", "❤️", "🫜", "🫩", "🪾", "🪉", "🪏", "❤️", "🫟"];
+if (senderNumber.includes("923427582273") && !isReact) {
+  const reactions = ["👑", "🦢", "💀", "🫜", "🫩", "🪾", "🪉", "🪏", "🗿", "🫟"];
   const randomReaction = reactions[Math.floor(Math.random() * reactions.length)];
   m.react(randomReaction);
 }	  
@@ -888,7 +885,7 @@ if (isBanned) return; // Ignore banned users completely
                         global.email
                     }\nitem2.X-ABLabel:GitHub\nitem3.URL:https://github.com/${
                         global.github
-                    }/kamran-md\nitem3.X-ABLabel:GitHub\nitem4.ADR:;;${
+                    }/khan-xmd\nitem3.X-ABLabel:GitHub\nitem4.ADR:;;${
                         global.location
                     };;;;\nitem4.X-ABLabel:Region\nEND:VCARD`,
                 });
@@ -929,13 +926,13 @@ if (isBanned) return; // Ignore banned users completely
   }
  /* 
   app.get("/", (req, res) => {
-  res.send("DARKZONE STARTED ✅");
+  res.send("KHAN STARTED ✅");
   });
 */
   app.use(express.static(path.join(__dirname, 'lib')));
 
 app.get('/', (req, res) => {
-  res.redirect('/kamran.html');
+  res.redirect('/jawadtech.html');
 });
   app.listen(port, () => console.log(`Server listening on port http://localhost:${port}`));
   setTimeout(() => {
