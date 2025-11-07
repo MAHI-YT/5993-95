@@ -1,16 +1,16 @@
 {
-  "name": "KAMRAN-MD",
+  "name": "DARKZONE-MD",
   "version": "5.0.0",
-  "description": "A WhatsApp Bot Created By DR KAMRAN",
+  "description": "A WhatsApp Bot Created By 𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟 🤕",
   "main": "index.js",
   "engines": {
     "node": ">=20.x",
     "npm": ">=10.x"
   },
   "scripts": {
-    "start": "pm2 start index.js --deep-monitoring --attach --name KAMRAN-MD",
-    "stop": "pm2 stop KAMRAN-MD",
-    "restart": "pm2 restart KAMRAN-MD"
+    "start": "pm2 start index.js --deep-monitoring --attach --name DARKZONE-MD",
+    "stop": "pm2 stop DARKZONE-MD",
+    "restart": "pm2 restart DARKZONE-MD"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "github:Jeliostarr/DEV-Baileys",
