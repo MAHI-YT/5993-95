@@ -30,7 +30,6 @@ const {
   const fs = require('fs')
   const ff = require('fluent-ffmpeg')
   const P = require('pino')
-  const GroupEvents = require('./lib/groupevents');
   const { PresenceControl, BotActivityFilter } = require('./data/presence');
   const qrcode = require('qrcode-terminal')
   const StickersTypes = require('wa-sticker-formatter')
@@ -241,11 +240,6 @@ conn.ev.on('call', async (calls) => {
   }
 });	
 	
-//=========WELCOME & GOODBYE =======
-	
-conn.ev.on('presence.update', async (update) => {
-    await PresenceControl(conn, update);
-});
 
 // always Online 
 
