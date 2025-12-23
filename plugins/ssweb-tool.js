@@ -1,54 +1,54 @@
 
-
-const axios = require("axios");
-const config = require('../config');
 const { cmd } = require('../command');
+const axios = require('axios');
 
 cmd({
-  pattern: "sss",
-  alias: ["ssweb"],
-  react: "💫",
-  desc: "Download screenshot of a given link.",
-  category: "other",
-  use: ".ss <link>",
-  filename: __filename,
-}, 
-async (conn, mek, m, {
-  from, l, quoted, body, isCmd, command, args, q, isGroup, sender, 
-  senderNumber, botNumber2, botNumber, pushname, isMe, isOwner, 
-  groupMetadata, groupName, participants, isItzcp, groupAdmins, 
-  isBotAdmins, isAdmins, reply 
-}) => {
-  if (!q) {
-    return reply("Please provide a URL to capture a screenshot.");
-  }
+    pattern: "screenshot",
+    alias: ["ss", "ssweb", "webshot"],
+    desc: "Capture a screenshot of a website and send it on WhatsApp",
+    category: "tools",
+    react: "🖼️",
+    filename: __filename
+},
+async (conn, mek, m, { from, args, q, reply, react }) => {
+    try {
+        // Validate input
+        if (!q) return reply("Please provide a website URL to capture.\nExample: `.screenshot https://example.com`");
 
-  try {
-    // created by jawad tech 
-    const response = await axios.get(`https://api.davidcyriltech.my.id/ssweb?url=${q}`);
-    const screenshotUrl = response.data.screenshotUrl;
+        // API endpoint
+        const apiUrl = `https://api.elrayyxml.web.id/api/tools/ssweb?url=${encodeURIComponent(q)}`;
+        const { data } = await axios.get(apiUrl);
 
-    // give credit and use
-    const imageMessage = {
-      image: { url: screenshotUrl },
-      caption: "*WEB SS DOWNLOADER*\n\n> *𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟*",
-      contextInfo: {
-        mentionedJid: [m.sender],
-        forwardingScore: 999,
-        isForwarded: true,
-        forwardedNewsletterMessageInfo: {
-          newsletterJid: '120363416743041101@newsletter',
-          newsletterName: "𝐸𝑅𝐹𝒜𝒩 𝒜𝐻𝑀𝒜𝒟",
-          serverMessageId: 143,
-        },
-      },
-    };
+        // Validate API response
+        if (!data || !data.result || !data.result.file_url) {
+            await react("❌");
+            return reply("Failed to capture the screenshot. Please check the URL or try again later.");
+        }
 
-    await conn.sendMessage(from, imageMessage, { quoted: m });
-  } catch (error) {
-    console.error(error);
-    reply("Failed to capture the screenshot. Please try again.");
-  }
+        const screenshotUrl = data.result.file_url;
+
+        // Notify user while downloading
+        await reply(
+            `📸 *Taking Screenshot...*\n\n` +
+            `🧑‍💻 *Author:* ${data.author || 'Unknown'}\n` +
+            `🌐 *Website:* ${q}\n\n` +
+            `Please wait while the screenshot is being fetched...`
+        );
+
+        // Download screenshot image
+        const response = await axios.get(screenshotUrl, { responseType: 'arraybuffer' });
+
+        // Send the screenshot image
+        await conn.sendMessage(from, {
+            image: Buffer.from(response.data),
+            caption: `🖼️ *Website Screenshot Captured Successfully!*\n🌐 URL: ${q}`
+        }, { quoted: mek });
+
+        await react("✅");
+
+    } catch (e) {
+        console.error("Error in Screenshot command:", e);
+        await react("❌");
+        reply("An error occurred while capturing or sending the screenshot.");
+    }
 });
-
-
