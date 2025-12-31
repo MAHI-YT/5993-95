@@ -1,5 +1,70 @@
-const { cmd } = require('../command');
+const { cmd } = require('../command')
 
+/* =========================
+   FULL ADMIN CHECK (LID FIX)
+========================= */
+async function checkAdminStatus(conn, chatId, senderId) {
+    try {
+        const metadata = await conn.groupMetadata(chatId)
+        const participants = metadata.participants || []
+
+        const botId = conn.user?.id || ''
+        const botLid = conn.user?.lid || ''
+
+        const extract = id =>
+            id?.includes(':') ? id.split(':')[0] :
+            id?.includes('@') ? id.split('@')[0] : id
+
+        const botNumber = extract(botId)
+        const botLidNum = extract(botLid)
+        const senderNum = extract(senderId)
+
+        let isBotAdmin = false
+        let isSenderAdmin = false
+
+        for (let p of participants) {
+            if (p.admin === "admin" || p.admin === "superadmin") {
+
+                const pId = extract(p.id)
+                const pLid = extract(p.lid)
+                const pPhone = extract(p.phoneNumber)
+                const pFullId = p.id || ''
+                const pFullLid = p.lid || ''
+
+                // BOT ADMIN CHECK
+                if (
+                    botId === pFullId ||
+                    botId === pFullLid ||
+                    botLid === pFullLid ||
+                    botLidNum === pLid ||
+                    botNumber === pPhone ||
+                    botNumber === pId
+                ) {
+                    isBotAdmin = true
+                }
+
+                // SENDER ADMIN CHECK
+                if (
+                    senderId === pFullId ||
+                    senderNum === pPhone ||
+                    senderNum === pId ||
+                    (pLid && senderNum === pLid)
+                ) {
+                    isSenderAdmin = true
+                }
+            }
+        }
+
+        return { isBotAdmin, isSenderAdmin }
+    } catch (err) {
+        console.error('Admin check error:', err)
+        return { isBotAdmin: false, isSenderAdmin: false }
+    }
+}
+
+/* =========================
+   ➕ ADD MEMBER
+========================= */
 cmd({
     pattern: "add",
     alias: ["invite"],
@@ -8,39 +73,40 @@ cmd({
     react: "➕",
     filename: __filename
 },
-async (conn, mek, m, { from, q, isGroup, isAdmins, isBotAdmins, reply }) => {
+async (conn, mek, m, { from, q, isGroup, reply }) => {
 
-    // Must be in a group
-    if (!isGroup) return reply("❌ This command can only be used in groups.");
+    if (!isGroup)
+        return reply("❌ This command can only be used in groups.")
 
-    // Only admins can use this command
-    if (!isAdmins) return reply("❌ Only group admins can use this command.");
+    const senderId = mek.key.participant || mek.key.remoteJid
+    const { isBotAdmin, isSenderAdmin } =
+        await checkAdminStatus(conn, from, senderId)
 
-    // Bot must be admin
-    if (!isBotAdmins) return reply("❌ I need to be an admin to add members.");
+    if (!isSenderAdmin)
+        return reply("❌ Only group admins can use this command.")
 
-    // Check if a number is provided
-    if (!q || !/^\d+$/.test(q)) {
-        return reply("📱 Please provide a valid phone number.\nExample: `.add 923001234567`");
-    }
+    if (!isBotAdmin)
+        return reply("❌ I need to be an admin to add members.")
 
-    const userJid = `${q}@s.whatsapp.net`;
+    if (!q || !/^\d+$/.test(q))
+        return reply("📱 Please provide a valid phone number.\nExample: `.add 923001234567`")
+
+    const userJid = `${q}@s.whatsapp.net`
 
     try {
-        // Try adding the number to the group
-        await conn.groupParticipantsUpdate(from, [userJid], "add");
+        await conn.groupParticipantsUpdate(from, [userJid], "add")
 
-        // Success message
-        await reply(`✅ Successfully added @${q}\n~ DARKZONE-MD`, { mentions: [userJid] });
+        reply(`✅ Successfully added @${q}\n~ DARKZONE-MD`, {
+            mentions: [userJid]
+        })
 
     } catch (error) {
-        console.error("Add Command Error:", error);
+        console.error("Add command error:", error)
 
-        // Handle known WhatsApp API errors
         if (error?.data?.error?.includes("not-authorized")) {
-            reply("⚠️ This user has privacy settings that prevent being added to groups.");
+            reply("⚠️ This user’s privacy settings prevent being added to groups.")
         } else {
-            reply("❌ Failed to add the member. Please try again later.");
+            reply("❌ Failed to add the member. Please try again later.")
         }
     }
-});
+})
