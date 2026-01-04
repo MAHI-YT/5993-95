@@ -6,7 +6,7 @@ const { runtime } = require('../lib/functions');
 
 cmd({
     pattern: "alive",
-    alias: ["bot", "status", "ping", "test", "a"],
+    alias: ["darkzone", "status", "irfan", "test", "a"],
     react: "💚",
     desc: "Check if bot is alive with image, video note and live ping",
     category: "main",
