@@ -13,6 +13,12 @@ cmd({
     try {
         if (!q) return await reply("🎥 Please provide a YouTube video name or URL!\n\nExample: `.video pal pal`");
 
+        // ✅ MOVED THIS FUNCTION TO TOP (BEFORE IT'S USED)
+        function getVideoId(url) {
+            const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
+            return match ? match[1] : null;
+        }
+
         let url = q;
         let videoInfo = null;
 
@@ -32,12 +38,6 @@ cmd({
             }
             videoInfo = search.videos[0];
             url = videoInfo.url;
-        }
-
-        // Extract video ID
-        function getVideoId(url) {
-            const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
-            return match ? match[1] : null;
         }
 
         // Send thumbnail + details before downloading
