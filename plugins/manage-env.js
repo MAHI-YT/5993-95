@@ -213,9 +213,9 @@ cmd({
 });
 
 cmd({
-    pattern: "anti-call",
+    pattern: "59595",
     react: "🫟",
-    alias: ["anticall"],
+    alias: ["59595"],
     desc: "Enable or disable welcome messages for new members",
     category: "owner",
     filename: __filename
