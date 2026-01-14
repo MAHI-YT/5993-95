@@ -239,7 +239,7 @@ cmd({
         let sentMsg;
         try {
             sentMsg = await conn.sendMessage(from, {
-                image: { url: config.MENU_IMAGE_URL || 'https://files.catbox.moe/8cb9h0.jpg' },
+                image: { url: config.MENU_IMAGE_URL || 'https://honest-emerald-4wx4dg9grd.edgeone.app/IMG-20251213-WA0013.jpg' },
                 caption: menuCaption,
                 contextInfo: contextInfo
             }, { quoted: mek });
