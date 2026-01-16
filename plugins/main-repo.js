@@ -33,7 +33,7 @@ async (conn, mek, m, { from, reply }) => {
 
         // Send image with caption
         await conn.sendMessage(from, {
-            image: { url: `https://honest-emerald-4wx4dg9grd.edgeone.app/IMG-20251213-WA0013.jpg` },
+            image: { url: `https://files.catbox.moe/r1y5yk.jpg` },
             caption: formattedInfo,
             contextInfo: { 
                 mentionedJid: [m.sender],
