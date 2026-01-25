@@ -1,16 +1,6 @@
 const config = require('../config')
 const { cmd } = require('../command')
 
-async function getGroupAdmins(participants = []) {
-    const admins = []
-    for (let p of participants) {
-        if (p.admin === "admin" || p.admin === "superadmin") {
-            admins.push(p.id) // p.id can be LID or PN
-        }
-    }
-    return admins
-}
-
 async function checkAdminStatus(conn, chatId, senderId) {
     try {
         const metadata = await conn.groupMetadata(chatId);
@@ -19,61 +9,35 @@ async function checkAdminStatus(conn, chatId, senderId) {
         const botId = conn.user?.id || '';
         const botLid = conn.user?.lid || '';
         
-        // Extract bot information
-        const botNumber = botId.includes(':') ? botId.split(':')[0] : (botId.includes('@') ? botId.split('@')[0] : botId);
-        const botIdWithoutSuffix = botId.includes('@') ? botId.split('@')[0] : botId;
-        const botLidNumeric = botLid.includes(':') ? botLid.split(':')[0] : (botLid.includes('@') ? botLid.split('@')[0] : botLid);
-        const botLidWithoutSuffix = botLid.includes('@') ? botLid.split('@')[0] : botLid;
+        // Normalize bot ID - extract numeric part
+        const botNumber = botId.replace(/[:@].*/g, '');
+        const botLidNumber = botLid ? botLid.replace(/[:@].*/g, '') : '';
         
-        // Extract sender information
-        const senderNumber = senderId.includes(':') ? senderId.split(':')[0] : (senderId.includes('@') ? senderId.split('@')[0] : senderId);
-        const senderIdWithoutSuffix = senderId.includes('@') ? senderId.split('@')[0] : senderId;
+        // Normalize sender ID - extract numeric part
+        const senderNumber = senderId.replace(/[:@].*/g, '');
         
         let isBotAdmin = false;
         let isSenderAdmin = false;
         
         for (let p of participants) {
-            if (p.admin === "admin" || p.admin === "superadmin") {
-                // Check participant IDs
-                const pPhoneNumber = p.phoneNumber ? p.phoneNumber.split('@')[0] : '';
-                const pId = p.id ? p.id.split('@')[0] : '';
-                const pLid = p.lid ? p.lid.split('@')[0] : '';
-                const pFullId = p.id || '';
-                const pFullLid = p.lid || '';
-                
-                // Extract numeric part from participant LID
-                const pLidNumeric = pLid.includes(':') ? pLid.split(':')[0] : pLid;
+            const isAdmin = p.admin === "admin" || p.admin === "superadmin";
+            
+            if (isAdmin) {
+                // Normalize participant ID
+                const pNumber = p.id ? p.id.replace(/[:@].*/g, '') : '';
+                const pLidNumber = p.lid ? p.lid.replace(/[:@].*/g, '') : '';
                 
                 // Check if this participant is the bot
-                const botMatches = (
-                    botId === pFullId ||
-                    botId === pFullLid ||
-                    botLid === pFullLid ||
-                    botLidNumeric === pLidNumeric ||
-                    botLidWithoutSuffix === pLid ||
-                    botNumber === pPhoneNumber ||
-                    botNumber === pId ||
-                    botIdWithoutSuffix === pPhoneNumber ||
-                    botIdWithoutSuffix === pId ||
-                    (botLid && botLid.split('@')[0].split(':')[0] === pLid)
-                );
-                
-                if (botMatches) {
+                if (pNumber === botNumber || 
+                    pLidNumber === botNumber || 
+                    pNumber === botLidNumber || 
+                    pLidNumber === botLidNumber) {
                     isBotAdmin = true;
                 }
                 
                 // Check if this participant is the sender
-                const senderMatches = (
-                    senderId === pFullId ||
-                    senderId === pFullLid ||
-                    senderNumber === pPhoneNumber ||
-                    senderNumber === pId ||
-                    senderIdWithoutSuffix === pPhoneNumber ||
-                    senderIdWithoutSuffix === pId ||
-                    (pLid && senderIdWithoutSuffix === pLid)
-                );
-                
-                if (senderMatches) {
+                if (pNumber === senderNumber || 
+                    pLidNumber === senderNumber) {
                     isSenderAdmin = true;
                 }
             }
@@ -95,19 +59,39 @@ cmd({
     category: "group",
     filename: __filename
 },           
-async (conn, mek, m, { from, isGroup, isBotAdmins, reply }) => {
+async (conn, mek, m, { from, isGroup, reply, sender }) => {
     try {
         if (!isGroup) return reply("❌ This command can only be used in groups.");
         
-        // Get sender ID with LID support
-        const senderId = mek.key.participant || mek.key.remoteJid || mek.key.fromMe ? conn.user?.id : null;
-        if (!senderId) return reply("❌ Could not identify sender.");
+        // ✅ FIXED: Properly get sender ID with correct operator precedence
+        let senderId;
+        
+        if (mek.key.fromMe) {
+            // If message is from bot itself
+            senderId = conn.user?.id;
+        } else {
+            // Get actual sender from group message
+            senderId = mek.key.participant || m?.sender || sender || m?.key?.participant;
+        }
+        
+        if (!senderId) {
+            return reply("❌ Could not identify sender.");
+        }
+        
+        console.log('Sender ID:', senderId); // Debug log
         
         // Check admin status using the integrated function
         const { isBotAdmin, isSenderAdmin } = await checkAdminStatus(conn, from, senderId);
         
-        if (!isSenderAdmin) return reply("❌ Only group admins can use this command.");
-        if (!isBotAdmin) return reply("❌ I need to be an admin to mute the group.");
+        console.log('Bot Admin:', isBotAdmin, '| Sender Admin:', isSenderAdmin); // Debug log
+        
+        if (!isSenderAdmin) {
+            return reply("❌ Only group admins can use this command.");
+        }
+        
+        if (!isBotAdmin) {
+            return reply("❌ I need to be an admin to mute the group.");
+        }
         
         await conn.groupSettingUpdate(from, "announcement");
         reply("✅ Group has been muted. Only admins can send messages.");
@@ -116,4 +100,4 @@ async (conn, mek, m, { from, isGroup, isBotAdmins, reply }) => {
         console.error("Error muting group:", e);
         reply("❌ Failed to mute the group. Please try again.");
     }
-})
+});
