@@ -2,10 +2,29 @@ const axios = require('axios');
 const config = require('../config');
 const { cmd } = require('../command');
 
+async function getGoogleImageSearch(query) {
+    const apiUrl = `https://api-faa.my.id/faa/google-image?query=${encodeURIComponent(query)}`;
+    
+    try {
+        const res = await axios.get(apiUrl);
+        const data = res.data;
+        
+        // Check if status is true and result is an array
+        if (data.status === true && Array.isArray(data.result)) {
+            // Filter valid URLs
+            return data.result.filter(url => typeof url === 'string' && url.startsWith('http'));
+        }
+        return [];
+    } catch (error) {
+        console.error('API Error:', error.message);
+        return [];
+    }
+}
+
 cmd({
     pattern: "imagen",
-    alias: ["image", "img", "gimage"],
-    react: "🖼️",
+    alias: ["image", "img"],
+    react: "🕒",
     desc: "Search for images",
     category: "search",
     use: ".imagen <query>",
@@ -14,69 +33,39 @@ cmd({
     try {
         if (!q) return reply(`❀ Please enter a text to search for an Image.`);
 
-        await conn.sendMessage(from, { react: { text: "🔍", key: m.key } });
-        await reply("*🔎 SEARCHING FOR IMAGES...*");
+        await reply("*🔍 SEARCHING FOR IMAGES...*");
 
-        // API Call
-        const apiURL = `https://api-faa.my.id/faa/google-image?query=${encodeURIComponent(q)}`;
+        const urls = await getGoogleImageSearch(q);
         
-        const res = await axios.get(apiURL, {
-            timeout: 30000
-        });
-
-        const data = res.data;
-
-        if (!data.result || data.result.length === 0) {
-            return reply("✧ No images found.");
+        if (!urls || urls.length === 0) {
+            return reply('✧ No images found for your search.');
+        }
+        
+        if (urls.length < 2) {
+            return reply('✧ Not enough images found for an album.');
         }
 
-        const imageUrls = data.result;
+        // Send up to 10 images
+        const imagesToSend = urls.slice(0, 10);
         
-        await conn.sendMessage(from, { react: { text: "⬆️", key: m.key } });
-
-        let sentCount = 0;
-
-        // Try to send each image
-        for (let i = 0; i < Math.min(imageUrls.length, 5); i++) {
+        for (let i = 0; i < imagesToSend.length; i++) {
             try {
-                // Download image as buffer first
-                const imgResponse = await axios.get(imageUrls[i], {
-                    responseType: 'arraybuffer',
-                    timeout: 15000,
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-                        'Accept-Language': 'en-US,en;q=0.9',
-                        'Referer': 'https://www.google.com/'
-                    }
-                });
-
-                const imageBuffer = Buffer.from(imgResponse.data);
-
-                // Send buffer
-                await conn.sendMessage(from, {
-                    image: imageBuffer,
-                    caption: sentCount === 0 ? `🔍 *Results for:* ${q}\n\n> 📥 *DARKZONE-MD*` : ""
+                await conn.sendMessage(from, { 
+                    image: { url: imagesToSend[i] },
+                    caption: i === 0 ? `> 🖼️ DARKZONE-MD RESULTS FOR: ${q}` : ''
                 }, { quoted: m });
-
-                sentCount++;
-                await new Promise(r => setTimeout(r, 1500));
-
-            } catch (imgErr) {
-                console.log(`Image ${i + 1} failed, trying next...`);
-                continue;
+            } catch (err) {
+                console.error(`Failed to send image ${i + 1}:`, err.message);
+                continue; // Skip failed image and continue with next
             }
         }
 
-        if (sentCount === 0) {
-            return reply("❌ Could not download any images. Try different query.");
-        }
-
-        await conn.sendMessage(from, { react: { text: "✅", key: m.key } });
+        await conn.sendMessage(from, { 
+            text: `✅ Successfully sent ${imagesToSend.length} images for: *${q}*` 
+        }, { quoted: m });
 
     } catch (error) {
-        console.error('Error:', error.message);
-        await conn.sendMessage(from, { react: { text: "❌", key: m.key } });
-        reply(`⚠️ Error: ${error.message}`);
+        console.error('Image Search Error:', error);
+        reply(`⚠️ A problem has occurred.\n\n${error.message}`);
     }
 });
