@@ -243,7 +243,7 @@ cmd({
         let sentMsg;
         try {
             sentMsg = await conn.sendMessage(from, {
-                image: { url: config.MENU_IMAGE_URL || 'https://honest-emerald-4wx4dg9grd.edgeone.app/IMG-20251213-WA0013.jpg' },
+                image: { url: config.MENU_IMAGE_URL || 'https://i.ibb.co/Sw4pzTWC/IMG-20260124-WA0728.jpg' },
                 caption: menuCaption,
                 contextInfo: contextInfo
             }, { quoted: mek });
