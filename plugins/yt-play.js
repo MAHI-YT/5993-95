@@ -1,12 +1,10 @@
-
 const { cmd } = require('../command');
 const axios = require('axios');
-const yts = require('yt-search');
 
 cmd({
     pattern: "music",
     alias: ["play", "song", "audio", "roohi"],
-    desc: "Download YouTube audio with thumbnail (Izumi API)",
+    desc: "Download YouTube audio with thumbnail (Deline API)",
     category: "download",
     react: "🎶",
     filename: __filename
@@ -14,26 +12,30 @@ cmd({
     try {
         if (!q) return await reply("🎧 Please provide a song name!\n\nExample: .play Faded Alan Walker");
 
-        const { videos } = await yts(q);
-        if (!videos || videos.length === 0) return await reply("❌ No results found!");
+        await reply("🔍 Searching for your song...");
 
-        const vid = videos[0];
-
-        // 🎵 Send video thumbnail + info first
-        await conn.sendMessage(from, {
-            image: { url: vid.thumbnail },
-            caption: `- *AUDIO DOWNLOADER 🎧*\n╭━━❐━⪼\n┇๏ *Title* - ${vid.title}\n┇๏ *Duration* - ${vid.timestamp}\n┇๏ *Views* - ${vid.views.toLocaleString()}\n┇๏ *Author* - ${vid.author.name}\n┇๏ *Status* - Downloading...\n╰━━❑━⪼\n> *DARKZONE-MD*`
-        }, { quoted: mek });
-
-        // Use new Izumi API
-        const api = `https://api.ootaizumi.web.id/downloader/youtube?url=${encodeURIComponent(vid.url)}&format=mp3`;
+        // Use new Deline API
+        const api = `https://api.deline.web.id/downloader/ytplay?q=${encodeURIComponent(q)}`;
         const res = await axios.get(api);
         const json = res.data;
 
-        if (!json?.status || !json?.result?.download) return await reply("❌ Download failed! Try again later.");
+        if (!json?.status || !json?.result?.dlink) {
+            return await reply("❌ No results found or download failed!");
+        }
 
-        const audioUrl = json.result.download;
-        const title = json.result.title || vid.title || "Unknown Song";
+        const result = json.result;
+        const title = result.title || "Unknown Song";
+        const thumbnail = result.thumbnail;
+        const audioUrl = result.dlink;
+        const quality = result.pick?.quality || "128kbps";
+        const size = result.pick?.size || "Unknown";
+        const videoUrl = result.url || "N/A";
+
+        // 🎵 Send video thumbnail + info first
+        await conn.sendMessage(from, {
+            image: { url: thumbnail },
+            caption: `- *AUDIO DOWNLOADER 🎧*\n╭━━❐━⪼\n┇๏ *Title* - ${title}\n┇๏ *Quality* - ${quality}\n┇๏ *Size* - ${size}\n┇๏ *URL* - ${videoUrl}\n┇๏ *Status* - Downloading...\n╰━━❑━⪼\n> *DARKZONE-MD*`
+        }, { quoted: mek });
 
         // 🎧 Send final audio file
         await conn.sendMessage(from, {
