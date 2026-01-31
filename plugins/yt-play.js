@@ -12,8 +12,6 @@ cmd({
     try {
         if (!q) return await reply("🎧 Please provide a song name!\n\nExample: .play Faded Alan Walker");
 
-        
-
         // Use new Deline API
         const api = `https://api.deline.web.id/downloader/ytplay?q=${encodeURIComponent(q)}`;
         const res = await axios.get(api);
@@ -29,12 +27,11 @@ cmd({
         const audioUrl = result.dlink;
         const quality = result.pick?.quality || "128kbps";
         const size = result.pick?.size || "Unknown";
-        const videoUrl = result.url || "N/A";
 
         // 🎵 Send video thumbnail + info first
         await conn.sendMessage(from, {
             image: { url: thumbnail },
-            caption: `- *AUDIO DOWNLOADER 🎧*\n╭━━❐━⪼\n┇๏ *Title* - ${title}\n┇๏ *Quality* - ${quality}\n┇๏ *Size* - ${size}\n┇๏ *Author* - ${vid.author.name}\n┇๏ *Status* - Downloading...\n╰━━❑━⪼\n> *DARKZONE-MD*`
+            caption: `- *AUDIO DOWNLOADER 🎧*\n╭━━❐━⪼\n┇๏ *Title* - ${title}\n┇๏ *Quality* - ${quality}\n┇๏ *Size* - ${size}\n┇๏ *Status* - Downloading...\n╰━━❑━⪼\n> *DARKZONE-MD*`
         }, { quoted: mek });
 
         // 🎧 Send final audio file
