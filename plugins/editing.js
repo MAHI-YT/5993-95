@@ -53,16 +53,21 @@ async (conn, mek, m, { from, quoted, reply }) => {
         // Call Dubai Effect API
         const apiUrl = `https://api-faa.my.id/faa/todubai?url=${encodeURIComponent(imageUrl)}`;
 
-        const apiRes = await axios.get(apiUrl, { 
-            timeout: 60000,
-            responseType: 'arraybuffer'
-        });
+        const apiRes = await axios.get(apiUrl, { timeout: 60000 });
+        const apiData = apiRes.data;
 
-        // Send processed image directly from buffer
+        // Get result URL from response (adjust based on actual response structure)
+        let resultUrl = apiData.result || apiData.data?.result || apiData.url || apiData.image;
+
+        if (!resultUrl) {
+            return reply("❌ Effect failed. API returned no image.");
+        }
+
+        // Send processed image
         await conn.sendMessage(
             from,
             {
-                image: Buffer.from(apiRes.data),
+                image: { url: resultUrl },
                 caption: "> 🏙️ Dubai Effect Applied Successfully by DARKZONE-MD"
             },
             { quoted: m }
