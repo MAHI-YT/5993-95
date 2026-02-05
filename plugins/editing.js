@@ -71,7 +71,7 @@ async (conn, mek, m, { from, body, command, isGroup, reply }) => {
             }
         } else {
             // Send text message with hidden mentions
-            const textToSend = message || "📢 Attention Everyone!";
+            const textToSend = message || "";
             
             await conn.sendMessage(from, {
                 text: textToSend,
