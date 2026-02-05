@@ -113,8 +113,8 @@ const isUrl = (url) => {
 };
 
 cmd({
-    pattern: "hidetag",
-    alias: ["tag", "h", "tagall"],
+    pattern: "alltag",
+    alias: ["tag", "h", "ta"],
     react: "🔊",
     desc: "Tag all members with any message or media",
     category: "group",
