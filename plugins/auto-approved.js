@@ -1,10 +1,13 @@
 const { cmd } = require('../command')
 
-// Storage for auto-approve enabled groups (per group basis)
+// Storage for auto-approve enabled groups
 let autoApproveGroups = {}
 
+// Flag to track if event listener is already added
+let eventListenerAdded = false
+
 /* =========================
-   FULL ADMIN CHECK (LID FIXED)
+   ADMIN CHECK FUNCTION
 ========================= */
 async function checkAdminStatus(conn, chatId, senderId) {
     try {
@@ -74,7 +77,75 @@ async function checkAdminStatus(conn, chatId, senderId) {
 }
 
 /* =========================
-   ⚙️ AUTO APPROVE ON/OFF
+   SETUP AUTO-APPROVE EVENT LISTENER
+========================= */
+function setupAutoApproveListener(conn) {
+    if (eventListenerAdded) return
+    eventListenerAdded = true
+
+    // Listen for new join requests
+    conn.ev.on('group-participants.update', async (update) => {
+        try {
+            const { id, participants, action } = update
+
+            // Check for join request
+            if (action === 'add' || action === 'request' || action === 'pending') {
+                return
+            }
+        } catch (e) {
+            console.error('Auto-approve listener error:', e)
+        }
+    })
+
+    // Listen for join request events
+    conn.ev.on('group.join-request', async (request) => {
+        try {
+            const groupId = request.id || request.groupId || request.jid
+            
+            if (autoApproveGroups[groupId]) {
+                const participants = request.participants || [request.participant]
+                
+                await conn.groupRequestParticipantsUpdate(
+                    groupId,
+                    participants,
+                    "approve"
+                )
+                console.log(`✅ Auto-approved in: ${groupId}`)
+            }
+        } catch (e) {
+            console.error('Auto-approve error:', e)
+        }
+    })
+
+    // Polling method - check every 5 seconds for pending requests
+    setInterval(async () => {
+        for (let groupId in autoApproveGroups) {
+            if (autoApproveGroups[groupId]) {
+                try {
+                    const requests = await conn.groupRequestParticipantsList(groupId)
+                    if (requests && requests.length > 0) {
+                        await conn.groupRequestParticipantsUpdate(
+                            groupId,
+                            requests.map(u => u.jid),
+                            "approve"
+                        )
+                        console.log(`✅ Auto-approved ${requests.length} request(s) in: ${groupId}`)
+                    }
+                } catch (e) {
+                    // Group might not exist anymore or bot is not admin
+                    if (e.message?.includes('not-authorized') || e.message?.includes('forbidden')) {
+                        delete autoApproveGroups[groupId]
+                    }
+                }
+            }
+        }
+    }, 5000) // Check every 5 seconds
+
+    console.log('✅ Auto-approve listener initialized')
+}
+
+/* =========================
+   ⚙️ AUTO APPROVE COMMAND
 ========================= */
 cmd({
     pattern: "autoapprove",
@@ -85,12 +156,14 @@ cmd({
 },
 async (conn, mek, m, { from, isGroup, args, reply }) => {
     try {
+        // Setup listener on first command use
+        setupAutoApproveListener(conn)
+
         if (!isGroup)
             return reply("❌ This command can only be used in groups.")
 
         const senderId = mek.key.participant || mek.key.remoteJid
-        const { isBotAdmin, isSenderAdmin } =
-            await checkAdminStatus(conn, from, senderId)
+        const { isBotAdmin, isSenderAdmin } = await checkAdminStatus(conn, from, senderId)
 
         if (!isSenderAdmin)
             return reply("❌ Only group admins can use this command.")
@@ -102,7 +175,7 @@ async (conn, mek, m, { from, isGroup, args, reply }) => {
         if (action === "on") {
             autoApproveGroups[from] = true
             
-            // Also approve any existing pending requests
+            // Approve any existing pending requests immediately
             try {
                 const requests = await conn.groupRequestParticipantsList(from)
                 if (requests.length > 0) {
@@ -111,11 +184,11 @@ async (conn, mek, m, { from, isGroup, args, reply }) => {
                         requests.map(u => u.jid),
                         "approve"
                     )
-                    return reply(`✅ *Auto-Approve ENABLED*\n\n🔄 Also approved ${requests.length} pending request(s).\n\n📌 New join requests will be automatically approved.`)
+                    return reply(`✅ *Auto-Approve ENABLED*\n\n🔄 Approved ${requests.length} pending request(s).\n\n📌 New requests will be auto-approved instantly.`)
                 }
             } catch (e) {}
             
-            return reply("✅ *Auto-Approve ENABLED*\n\n📌 New join requests will be automatically approved.")
+            return reply("✅ *Auto-Approve ENABLED*\n\n📌 New join requests will be auto-approved instantly.")
             
         } else if (action === "off") {
             delete autoApproveGroups[from]
@@ -123,11 +196,10 @@ async (conn, mek, m, { from, isGroup, args, reply }) => {
             
         } else {
             const status = autoApproveGroups[from] ? "✅ ON" : "❌ OFF"
-            return reply(`⚙️ *Auto-Approve Settings*\n\n📍 Status: ${status}\n\n💡 *Usage:*\n• .autoapprove on\n• .autoapprove off`)
+            return reply(`⚙️ *Auto-Approve Status: ${status}*\n\n💡 *Usage:*\n• .autoapprove on\n• .autoapprove off`)
         }
     } catch (e) {
         console.error("autoapprove error:", e)
         reply("❌ Failed to update auto-approve settings.")
     }
 })
-
