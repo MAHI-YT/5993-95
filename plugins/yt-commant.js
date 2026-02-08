@@ -1,90 +1,85 @@
 const { cmd } = require('../command');
 const axios = require('axios');
-const qs = require('querystring');
 
 cmd({
   pattern: "ytcomment",
-  alias: ["fakecomment", "fakeytcomment", "ytc", "youtubecomment"],
+  alias: ["fakecomment", "ytc", "fakeyt"],
   desc: "Generate a fake YouTube comment image",
   category: "image-tools",
-  use: ".ytcomment text=<comment> username=<name> avatar=<url>",
+  use: ".ytcomment text | username | avatar_url",
   filename: __filename
-}, async (conn, mek, m, { args, from, reply }) => {
+}, async (conn, mek, m, { args, from, reply, quoted }) => {
   try {
-    // If no arguments provided — show example usage
+    // If no arguments — show example usage
     if (!args.length) {
       return reply(
 `🎬 *YouTube Fake Comment Generator*
 
-✨ *Example Usage:*
-.ytcomment text=This video is amazing! username=JohnDoe avatar=https://files.catbox.moe/q3igju.jpg
+✨ *How To Use:*
 
-🧩 *Parameters:*
-• text - The comment text
-• username - YouTube username  
-• avatar - Profile picture URL
+*Method 1:* With Image URL
+.ytcomment This is amazing! | JohnDoe | https://imageurl.com/pic.jpg
 
-💡 *Tip:* Use + or _ for spaces in text
-Example: text=This+is+awesome!
+*Method 2:* Reply to an image
+Reply to any image with:
+.ytcomment Nice video! | MyUsername
 
-📌 *Simple Example:*
-.ytcomment text=Nice+video username=MyName avatar=https://i.ibb.co/example.jpg`
+📌 *Format:*
+.ytcomment <comment> | <username> | <avatar_url>
+
+💡 Use | to separate values`
       );
     }
 
-    // Join all args to handle spaces properly
-    const fullArgs = args.join(' ');
-    const params = {};
+    // Join all args and split by |
+    const input = args.join(' ').split('|').map(x => x.trim());
 
-    // Parse key=value pairs
-    const regex = /(\w+)=([^=]+?)(?=\s+\w+=|$)/g;
-    let match;
-    while ((match = regex.exec(fullArgs)) !== null) {
-      params[match[1].toLowerCase()] = match[2].trim();
+    // Get parameters
+    const text = input[0];
+    const username = input[1] || 'YouTube User';
+    let avatar = input[2] || null;
+
+    // Validate text
+    if (!text) {
+      return reply("❌ Please provide comment text!\n\nExample: .ytcomment Nice video! | JohnDoe | https://image.url");
     }
 
-    // Fallback: parse simple key=value format
-    if (Object.keys(params).length === 0) {
-      for (const token of args) {
-        const [k, ...rest] = token.split("=");
-        if (!k) continue;
-        params[k.toLowerCase()] = rest.join("=").trim();
+    // If no avatar, check if replied to an image
+    if (!avatar) {
+      if (quoted && quoted.mtype === 'imageMessage') {
+        // Get image URL from quoted message if possible
+        avatar = "https://i.ibb.co/KhYC4FY/1221bc0bdd2354b42b293317ff2adbcf-icon.png";
+      } else {
+        // Default avatar
+        avatar = "https://i.ibb.co/KhYC4FY/1221bc0bdd2354b42b293317ff2adbcf-icon.png";
       }
     }
 
-    // Get parameters with defaults
-    const text = params.text || params.comment || params.msg || "Nice video! 🔥";
-    const username = params.username || params.user || params.name || "YouTube User";
-    const avatar = params.avatar || params.avatarurl || params.photo || params.pp || "https://i.ibb.co/KhYC4FY/default.png";
+    await reply("⏳ Generating fake YouTube comment...");
 
-    // Validate required parameters
-    if (!params.text && !params.comment) {
-      return reply("❌ Please provide comment text!\n\n*Example:* .ytcomment text=Nice video! username=John avatar=https://example.com/photo.jpg");
-    }
+    // Properly encode parameters
+    const encodedText = encodeURIComponent(text);
+    const encodedUsername = encodeURIComponent(username);
+    const encodedAvatar = encodeURIComponent(avatar);
 
-    await reply("⏳ Generating fake YouTube comment, please wait...");
+    // API URL
+    const apiUrl = `https://api.deline.web.id/maker/ytcomment?text=${encodedText}&username=${encodedUsername}&avatar=${encodedAvatar}`;
 
-    // Build query string
-    const query = qs.stringify({
-      text: text,
-      username: username,
-      avatar: avatar
-    });
-
-    const apiUrl = `https://api.deline.web.id/maker/ytcomment?${query}`;
+    console.log("API URL:", apiUrl); // For debugging
 
     // Make API request
     const res = await axios.get(apiUrl, {
       responseType: 'arraybuffer',
       headers: { 
-        'accept': '*/*',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        'accept': 'image/png, image/jpeg, */*',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       },
-      timeout: 30000
+      timeout: 60000
     });
 
-    // Check if response is JSON (error)
+    // Check content type
     const contentType = (res.headers['content-type'] || '').toLowerCase();
+    
     if (contentType.includes('application/json')) {
       const textData = Buffer.from(res.data).toString('utf8');
       let json;
@@ -93,25 +88,35 @@ Example: text=This+is+awesome!
       } catch (e) { 
         json = { error: textData }; 
       }
-      const errMsg = json.error || json.message || JSON.stringify(json);
-      return reply(`❌ API Error: ${errMsg}`);
+      return reply(`❌ API Error: ${json.error || json.message || 'Unknown error'}`);
     }
 
     // Send the generated image
     const imageBuffer = Buffer.from(res.data);
+    
     await conn.sendMessage(from, {
       image: imageBuffer,
-      caption: `✅ *Fake YouTube Comment Generated!*\n\n👤 *Username:* ${username}\n💬 *Comment:* ${text}\n\n_Generated by DARKZONE-MD_`
+      caption: `✅ *Fake YouTube Comment Generated!*\n\n👤 *Username:* ${username}\n💬 *Comment:* ${text}`
     }, { quoted: mek });
 
   } catch (err) {
-    console.error("YTComment Error:", err.message);
+    console.error("YTComment Error:", err);
+    
     if (err.code === 'ECONNABORTED') {
-      return reply("❌ Request timed out. Please try again later.");
+      return reply("❌ Request timed out. Try again later.");
     }
-    if (err.response && err.response.status) {
+    if (err.code === 'ENOTFOUND' || err.code === 'ECONNREFUSED') {
+      return reply("❌ API server is down. Try again later.");
+    }
+    if (err.response) {
+      if (err.response.status === 502) {
+        return reply("❌ API server is temporarily unavailable (502). Please try again in a few minutes.");
+      }
+      if (err.response.status === 504) {
+        return reply("❌ API timeout (504). Please try again.");
+      }
       return reply(`❌ API error: HTTP ${err.response.status}`);
     }
-    return reply("❌ Failed to generate fake YouTube comment. Please try again later.");
+    return reply("❌ Failed to generate. Please try again later.");
   }
 });
