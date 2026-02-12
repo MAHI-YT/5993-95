@@ -4,11 +4,12 @@ const fs = require('fs');
 const path = require('path');
 
 // ═══════════════════════════════════════════════════════════
-// 📁 DATABASE FILE FOR STORING ANTI-LINK SETTINGS
+// 📁 DATABASE FILES
 // ═══════════════════════════════════════════════════════════
 const antiLinkDbPath = path.join(__dirname, '../database/antilink.json');
+const warningsDbPath = path.join(__dirname, '../database/antilink_warnings.json');
 
-// Ensure database directory exists
+// Ensure database exists
 function ensureDbExists() {
     const dbDir = path.dirname(antiLinkDbPath);
     if (!fs.existsSync(dbDir)) {
@@ -16,6 +17,9 @@ function ensureDbExists() {
     }
     if (!fs.existsSync(antiLinkDbPath)) {
         fs.writeFileSync(antiLinkDbPath, JSON.stringify({}), 'utf8');
+    }
+    if (!fs.existsSync(warningsDbPath)) {
+        fs.writeFileSync(warningsDbPath, JSON.stringify({}), 'utf8');
     }
 }
 
@@ -42,66 +46,103 @@ function saveAntiLinkSettings(settings) {
     }
 }
 
-// Get group settings with config.ANTI_LINK support
-function getGroupSettings(groupId) {
-    const settings = loadAntiLinkSettings();
-    const groupData = settings[groupId];
-    
-    // Check if config.ANTI_LINK is enabled (for global Mode 1)
-    const configAntiLink = config.ANTI_LINK === 'true' || config.ANTI_LINK === true;
-    
-    // If group has custom settings, use them
-    if (groupData && groupData.customSet === true) {
-        return {
-            enabled: groupData.enabled,
-            mode: groupData.mode,
-            isGlobal: false
-        };
+// Load warnings
+function loadWarnings() {
+    try {
+        ensureDbExists();
+        const data = fs.readFileSync(warningsDbPath, 'utf8');
+        return JSON.parse(data);
+    } catch (error) {
+        return {};
     }
-    
-    // If no custom settings, use config.ANTI_LINK for Mode 1 (global)
-    if (configAntiLink) {
-        return {
-            enabled: true,
-            mode: 1,
-            isGlobal: true
-        };
-    }
-    
-    // Default: disabled
-    return {
-        enabled: false,
-        mode: 1,
-        isGlobal: false
-    };
 }
 
-// Set group settings (custom override)
-function setGroupSettings(groupId, enabled, mode, customSet = true) {
+// Save warnings
+function saveWarnings(warnings) {
+    try {
+        ensureDbExists();
+        fs.writeFileSync(warningsDbPath, JSON.stringify(warnings, null, 2), 'utf8');
+        return true;
+    } catch (error) {
+        return false;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════
+// 🔧 CHECK IF ANTILINK IS ENABLED (WITH CONFIG SUPPORT)
+// ═══════════════════════════════════════════════════════════
+function isAntiLinkEnabled(groupId) {
     const settings = loadAntiLinkSettings();
-    settings[groupId] = { 
-        enabled, 
-        mode, 
-        customSet  // This flag indicates group has custom settings
-    };
+    
+    // If group has custom setting, use it
+    if (settings[groupId] !== undefined) {
+        return settings[groupId] === true;
+    }
+    
+    // Otherwise check config.ANTI_LINK (auto-enable if true)
+    const configAntiLink = config.ANTI_LINK === 'true' || config.ANTI_LINK === true;
+    return configAntiLink;
+}
+
+// Set antilink status for specific group
+function setAntiLinkStatus(groupId, enabled) {
+    const settings = loadAntiLinkSettings();
+    settings[groupId] = enabled;
     return saveAntiLinkSettings(settings);
 }
 
-// Reset group to global settings (follow config.ANTI_LINK)
-function resetGroupToGlobal(groupId) {
-    const settings = loadAntiLinkSettings();
-    if (settings[groupId]) {
-        delete settings[groupId];
-        return saveAntiLinkSettings(settings);
+// ═══════════════════════════════════════════════════════════
+// ⚠️ WARNING SYSTEM (Auto-reset after 5 minutes)
+// ═══════════════════════════════════════════════════════════
+function getWarningCount(groupId, senderId) {
+    const warnings = loadWarnings();
+    const key = `${groupId}_${senderId}`;
+    
+    if (!warnings[key]) return 0;
+    
+    const now = Date.now();
+    const fiveMinutes = 5 * 60 * 1000;
+    
+    // Auto-reset if more than 5 minutes passed
+    if (now - warnings[key].timestamp > fiveMinutes) {
+        delete warnings[key];
+        saveWarnings(warnings);
+        return 0;
     }
-    return true;
+    
+    return warnings[key].count;
+}
+
+function addWarning(groupId, senderId) {
+    const warnings = loadWarnings();
+    const key = `${groupId}_${senderId}`;
+    const now = Date.now();
+    const fiveMinutes = 5 * 60 * 1000;
+    
+    // Reset if expired or new user
+    if (!warnings[key] || (now - warnings[key].timestamp > fiveMinutes)) {
+        warnings[key] = { count: 1, timestamp: now };
+    } else {
+        warnings[key].count += 1;
+        warnings[key].timestamp = now;
+    }
+    
+    saveWarnings(warnings);
+    return warnings[key].count;
+}
+
+function resetWarning(groupId, senderId) {
+    const warnings = loadWarnings();
+    const key = `${groupId}_${senderId}`;
+    if (warnings[key]) {
+        delete warnings[key];
+        saveWarnings(warnings);
+    }
 }
 
 // ═══════════════════════════════════════════════════════════
-// 🔧 HELPER FUNCTIONS WITH LID SUPPORT
+// 🔧 HELPER FUNCTIONS
 // ═══════════════════════════════════════════════════════════
-
-// Extract number from any ID format
 function extractNumber(id) {
     if (!id) return '';
     let num = id;
@@ -110,7 +151,6 @@ function extractNumber(id) {
     return num.replace(/[^0-9]/g, '');
 }
 
-// Check admin status with full LID support
 async function checkAdminStatus(conn, chatId, senderId) {
     try {
         const metadata = await conn.groupMetadata(chatId);
@@ -120,64 +160,48 @@ async function checkAdminStatus(conn, chatId, senderId) {
         const botLid = conn.user?.lid || '';
         const botNumber = extractNumber(botId);
         const botLidNumber = extractNumber(botLid);
-        
         const senderNumber = extractNumber(senderId);
         
         let isBotAdmin = false;
         let isSenderAdmin = false;
-        let isSenderSuperAdmin = false;
         
         for (let p of participants) {
             const pNumber = extractNumber(p.id);
             const pLidNumber = p.lid ? extractNumber(p.lid) : '';
             const pPhoneNumber = p.phoneNumber ? extractNumber(p.phoneNumber) : '';
-            
             const isAdmin = p.admin === "admin" || p.admin === "superadmin";
             
             if (isAdmin) {
-                // Check bot
                 if (pNumber === botNumber || pLidNumber === botNumber || 
                     pNumber === botLidNumber || pLidNumber === botLidNumber ||
                     pPhoneNumber === botNumber) {
                     isBotAdmin = true;
                 }
-                
-                // Check sender
                 if (pNumber === senderNumber || pLidNumber === senderNumber ||
                     pPhoneNumber === senderNumber) {
                     isSenderAdmin = true;
-                    if (p.admin === "superadmin") {
-                        isSenderSuperAdmin = true;
-                    }
                 }
             }
         }
         
-        return { isBotAdmin, isSenderAdmin, isSenderSuperAdmin };
-        
+        return { isBotAdmin, isSenderAdmin };
     } catch (err) {
-        console.error('❌ Error checking admin status:', err);
-        return { isBotAdmin: false, isSenderAdmin: false, isSenderSuperAdmin: false };
+        console.error('Error checking admin status:', err);
+        return { isBotAdmin: false, isSenderAdmin: false };
     }
 }
 
-// Check if user is owner
 function isOwnerUser(senderId) {
     const senderNumber = extractNumber(senderId);
-    
     if (!config.OWNER_NUMBER) return false;
-    
     const ownerNumber = extractNumber(config.OWNER_NUMBER);
-    
     return senderNumber === ownerNumber;
 }
 
-// Get participant ID for removal (LID compatible)
 async function getParticipantId(conn, chatId, senderId) {
     try {
         const metadata = await conn.groupMetadata(chatId);
         const participants = metadata.participants || [];
-        
         const senderNumber = extractNumber(senderId);
         
         for (let p of participants) {
@@ -187,31 +211,28 @@ async function getParticipantId(conn, chatId, senderId) {
             
             if (pNumber === senderNumber || pLidNumber === senderNumber ||
                 pPhoneNumber === senderNumber) {
-                return { found: true, participantId: p.id };
+                return p.id;
             }
         }
-        return { found: false, participantId: senderId };
+        return senderId;
     } catch (err) {
-        console.error('❌ Error getting participant ID:', err);
-        return { found: false, participantId: senderId };
+        return senderId;
     }
 }
 
 // ═══════════════════════════════════════════════════════════
-// 📋 ANTI-LINK COMMAND (Settings Panel)
+// 📋 ANTI-LINK COMMAND (Simple On/Off)
 // ═══════════════════════════════════════════════════════════
-
 cmd({
     pattern: "antilink",
-    alias: ["antilinkmode", "al"],
-    desc: "Configure Anti-Link settings for the group",
+    alias: ["al"],
+    desc: "Enable or disable anti-link",
     category: "group",
     react: "🔗",
     filename: __filename
 },
 async (conn, mek, m, { from, args, q, isGroup, sender, reply }) => {
     try {
-        // Only works in groups
         if (!isGroup) {
             return await conn.sendMessage(from, { 
                 text: "❌ This command only works in groups!" 
@@ -219,215 +240,65 @@ async (conn, mek, m, { from, args, q, isGroup, sender, reply }) => {
         }
 
         const senderId = m.key?.participant || sender;
-        
-        // Check admin status
         const { isBotAdmin, isSenderAdmin } = await checkAdminStatus(conn, from, senderId);
         const isOwner = isOwnerUser(senderId);
 
-        // Only admins and owner can configure
         if (!isSenderAdmin && !isOwner) {
             return await conn.sendMessage(from, { 
-                text: "❌ Only group admins can configure Anti-Link!" 
+                text: "❌ Only group admins can use this command!" 
             }, { quoted: mek });
         }
 
-        // Get current settings
-        const currentSettings = getGroupSettings(from);
         const option = q ? q.toLowerCase().trim() : '';
-        
-        // Check config status
+        const currentStatus = isAntiLinkEnabled(from);
         const configAntiLink = config.ANTI_LINK === 'true' || config.ANTI_LINK === true;
 
-        // ═══════════════════════════════════════════════════════════
-        // 📊 SHOW MENU (No arguments)
-        // ═══════════════════════════════════════════════════════════
+        // No argument - show status
         if (!option) {
-            const statusEmoji = currentSettings.enabled ? "🟢" : "🔴";
-            const statusText = currentSettings.enabled ? "ON" : "OFF";
-            const globalEmoji = currentSettings.isGlobal ? "🌍" : "⚙️";
-            const globalText = currentSettings.isGlobal ? "(Global/Config)" : "(Custom)";
+            const statusEmoji = currentStatus ? "🟢" : "🔴";
+            const statusText = currentStatus ? "Enabled" : "Disabled";
+            const configStatus = configAntiLink ? "✅ TRUE" : "❌ FALSE";
             
-            let modeText = "";
-            switch(currentSettings.mode) {
-                case 1:
-                    modeText = "Mode 1: Delete Only";
-                    break;
-                case 2:
-                    modeText = "Mode 2: Delete All + Kick WA Links";
-                    break;
-                case 3:
-                    modeText = "Mode 3: Delete + Kick All Links";
-                    break;
-                default:
-                    modeText = "Mode 1: Delete Only";
-            }
-
-            const menuText = `
-╔════════════════════╗
-║  🔗 *ANTI-LINK SYSTEM* 
-╠════════════════════╣
-║                           
-║  ${statusEmoji} *Status:* ${statusText}
-║  📋 *Current:* ${modeText}
-║  ${globalEmoji} *Source:* ${globalText}
-║                           
-║  🌐 *Config ANTI_LINK:* ${configAntiLink ? "✅ TRUE" : "❌ FALSE"}
-║                           
-╠══════════════════════╣
-║     📚 *AVAILABLE MODES* ║
-╠══════════════════════╣
-║                           
-║  *Mode 1️⃣ - Delete Only* 🌍
-║  ➤ Linked with Config
-║  ➤ Deletes all links
-║  ➤ No one gets kicked
-║  ➤ Auto ON when ANTI_LINK=true
-║                           
-║  *Mode 2️⃣ - Smart Mode* ⚙️
-║  ➤ Custom per group
-║  ➤ Deletes all links
-║  ➤ Kicks only for WA links
-║  ➤ (Groups/Channels)
-║                           
-║  *Mode 3️⃣ - Strict Mode* ⚙️
-║  ➤ Custom per group
-║  ➤ Deletes all links
-║  ➤ Kicks for ANY link
-║  ➤ Maximum security
-║                           
-╠═════════════════════╣
-║       ⌨️ *COMMANDS*    ║
-╠═════════════════════╣
-║                           
-║  *.antilink on*
-║  ➤ Turn ON (Mode 1)
-║                           
-║  *.antilink off*
-║  ➤ Turn OFF Anti-Link
-║                           
-║  *.antilink mode2*
-║  ➤ Set to Smart Mode
-║                           
-║  *.antilink mode3*
-║  ➤ Set to Strict Mode
-║                           
-║  *.antilink reset*
-║  ➤ Reset to Global/Config
-║                           
-╠══════════════════╣
-║  *THIS IS DARKZONE-MD MODE*
-║  
-║                           
-║  ⚠️ Admins & Owner excluded
-╚═════════════════╝
-`.trim();
-
             return await conn.sendMessage(from, { 
-                text: menuText 
+                text: `🔗 *Anti-Link Status:* ${statusEmoji} ${statusText}\n\n⚙️ *Config ANTI_LINK:* ${configStatus}\n\n📝 *Usage:*\n• *.antilink on* - Enable\n• *.antilink off* - Disable\n\n⚠️ *Rules:*\n• 1st link = Warning + Delete\n• 2nd link = Kick from group\n• Warnings reset after 5 minutes`
             }, { quoted: mek });
         }
 
-        // ═══════════════════════════════════════════════════════════
-        // 🟢 TURN ON (Mode 1 - Delete Only)
-        // ═══════════════════════════════════════════════════════════
-        if (option === 'on' || option === 'enable' || option === 'mode1' || option === '1') {
+        // Enable anti-link
+        if (option === 'on' || option === 'enable') {
             if (!isBotAdmin) {
                 return await conn.sendMessage(from, { 
                     text: "❌ I need to be an admin to use Anti-Link!" 
                 }, { quoted: mek });
             }
 
-            setGroupSettings(from, true, 1, true);
+            setAntiLinkStatus(from, true);
 
             await conn.sendMessage(from, { 
                 react: { text: "✅", key: mek.key } 
             });
 
             return await conn.sendMessage(from, { 
-                text: `✅ *Anti-Link Enabled!*\n\n📋 *Mode:* 1️⃣ Delete Only\n\n📝 *Features:*\n• All links will be deleted\n• No one will be kicked\n• Warning message sent\n\n⚠️ Anyone who sends links will have their message deleted!`
+                text: `✅ *Anti-Link Enabled!*\n\n🔗 WhatsApp group/channel links will be deleted.\n\n⚠️ *Rules:*\n• 1st link = Warning + Delete\n• 2nd link = Kick from group\n• Warnings reset after 5 minutes`
             }, { quoted: mek });
         }
 
-        // ═══════════════════════════════════════════════════════════
-        // 🔴 TURN OFF
-        // ═══════════════════════════════════════════════════════════
+        // Disable anti-link
         if (option === 'off' || option === 'disable') {
-            setGroupSettings(from, false, 1, true);
+            setAntiLinkStatus(from, false);
 
             await conn.sendMessage(from, { 
                 react: { text: "✅", key: mek.key } 
             });
 
             return await conn.sendMessage(from, { 
-                text: `🔴 *Anti-Link Disabled!*\n\n✅ Members can now share links freely.\n\n💡 *Note:* This overrides global config setting.`
+                text: `🔴 *Anti-Link Disabled!*\n\n✅ Members can now share links freely.`
             }, { quoted: mek });
         }
 
-        // ═══════════════════════════════════════════════════════════
-        // 🔄 RESET TO GLOBAL (Follow config.ANTI_LINK)
-        // ═══════════════════════════════════════════════════════════
-        if (option === 'reset' || option === 'global' || option === 'default') {
-            resetGroupToGlobal(from);
-
-            await conn.sendMessage(from, { 
-                react: { text: "🔄", key: mek.key } 
-            });
-
-            const newSettings = getGroupSettings(from);
-            const statusText = newSettings.enabled ? "ON (Mode 1)" : "OFF";
-
-            return await conn.sendMessage(from, { 
-                text: `🔄 *Reset to Global Settings!*\n\n🌐 *Config ANTI_LINK:* ${configAntiLink ? "TRUE" : "FALSE"}\n📋 *Status:* ${statusText}\n\n💡 Now following Heroku config settings.`
-            }, { quoted: mek });
-        }
-
-        // ═══════════════════════════════════════════════════════════
-        // 2️⃣ MODE 2 - SMART MODE
-        // ═══════════════════════════════════════════════════════════
-        if (option === 'mode2' || option === '2' || option === 'smart' || option === 'warn') {
-            if (!isBotAdmin) {
-                return await conn.sendMessage(from, { 
-                    text: "❌ I need to be an admin to use Anti-Link!" 
-                }, { quoted: mek });
-            }
-
-            setGroupSettings(from, true, 2, true);
-
-            await conn.sendMessage(from, { 
-                react: { text: "2️⃣", key: mek.key } 
-            });
-
-            return await conn.sendMessage(from, { 
-                text: `2️⃣ *Mode 2 Activated: Smart Mode*\n\n📋 *Features:*\n• All links will be deleted\n• WhatsApp Group links = KICK ⛔\n• WhatsApp Channel links = KICK ⛔\n• Other links = Warning only ⚠️\n\n✅ Anti-Link is now ON with Smart Mode!`
-            }, { quoted: mek });
-        }
-
-        // ═══════════════════════════════════════════════════════════
-        // 3️⃣ MODE 3 - STRICT MODE
-        // ═══════════════════════════════════════════════════════════
-        if (option === 'mode3' || option === '3' || option === 'strict' || option === 'kick' || option === 'kickall') {
-            if (!isBotAdmin) {
-                return await conn.sendMessage(from, { 
-                    text: "❌ I need to be an admin to use Anti-Link!" 
-                }, { quoted: mek });
-            }
-
-            setGroupSettings(from, true, 3, true);
-
-            await conn.sendMessage(from, { 
-                react: { text: "3️⃣", key: mek.key } 
-            });
-
-            return await conn.sendMessage(from, { 
-                text: `3️⃣ *Mode 3 Activated: Strict Mode*\n\n📋 *Features:*\n• All links will be deleted\n• ANY link = INSTANT KICK ⛔\n• Maximum security level\n\n⚠️ *Warning:* This is the strictest mode!\n\n✅ Anti-Link is now ON with Strict Mode!`
-            }, { quoted: mek });
-        }
-
-        // ═══════════════════════════════════════════════════════════
-        // ❓ UNKNOWN OPTION
-        // ═══════════════════════════════════════════════════════════
+        // Unknown option
         return await conn.sendMessage(from, { 
-            text: `❌ Unknown option: *${option}*\n\n💡 Use *.antilink* to see all available options.`
+            text: `❌ Unknown option!\n\n📝 *Usage:*\n• *.antilink on* - Enable\n• *.antilink off* - Disable`
         }, { quoted: mek });
 
     } catch (e) {
@@ -439,11 +310,13 @@ async (conn, mek, m, { from, args, q, isGroup, sender, reply }) => {
 });
 
 // ═══════════════════════════════════════════════════════════
-// 🔍 ANTI-LINK DETECTOR (Runs on every message)
+// 🔍 ANTI-LINK DETECTOR (BYPASSES PRIVATE MODE)
 // ═══════════════════════════════════════════════════════════
-
 cmd({
-    on: "body"
+    on: "body",
+    dontAddCommandList: true,
+    fromMe: false,
+    onlyGroup: true
 }, async (conn, m, store, {
     from,
     body,
@@ -455,142 +328,75 @@ cmd({
         if (!isGroup) return;
         if (!body) return;
 
-        // Get group settings (now includes config.ANTI_LINK check)
-        const settings = getGroupSettings(from);
-        
-        // Check if anti-link is enabled
-        if (!settings.enabled) return;
+        // ⭐ BYPASS PRIVATE MODE CHECK - Always run antilink in groups
+        // Check if anti-link is enabled (includes config.ANTI_LINK check)
+        if (!isAntiLinkEnabled(from)) return;
 
         const senderId = m.key?.participant || sender;
         if (!senderId) return;
 
-        // Check admin status
         const { isBotAdmin, isSenderAdmin } = await checkAdminStatus(conn, from, senderId);
-
-        // Check if sender is owner
         const isOwner = isOwnerUser(senderId);
 
-        // Skip if sender is admin or owner (they can post links)
+        // Skip if sender is admin or owner
         if (isSenderAdmin || isOwner) return;
 
-        // Skip if bot is not admin (can't delete or kick)
+        // Skip if bot is not admin
         if (!isBotAdmin) return;
 
-        // ═══════════════════════════════════════════════════════════
-        // 🔗 LINK DETECTION PATTERNS
-        // ═══════════════════════════════════════════════════════════
-        
-        // All links pattern
-        const allLinksRegex = /\b((https?:\/\/)?(www\.)?([a-z0-9-]+\.)+[a-z]{2,})(\/\S*)?/gi;
-        
-        // WhatsApp group & channel links (dangerous links)
+        // WhatsApp group & channel links only
         const waLinksRegex = /(chat\.whatsapp\.com\/[A-Za-z0-9]+|whatsapp\.com\/channel\/[A-Za-z0-9]+)/gi;
 
-        const hasAnyLink = allLinksRegex.test(body);
-        const hasWaLink = waLinksRegex.test(body);
+        if (!waLinksRegex.test(body)) return;
 
-        // If no link found, return
-        if (!hasAnyLink) return;
+        // Delete the message first
+        try {
+            await conn.sendMessage(from, { delete: m.key });
+        } catch (delError) {
+            console.error("Failed to delete message:", delError);
+        }
 
-        // Get display number for mentions
+        // Add warning and get count
+        const warningCount = addWarning(from, senderId);
         const displayNumber = extractNumber(senderId);
-        const mode = settings.mode || 1;
 
         // ═══════════════════════════════════════════════════════════
-        // 🎯 MODE 1: DELETE ONLY (No Kick) - LINKED WITH CONFIG
+        // 🎯 SECOND WARNING = KICK
         // ═══════════════════════════════════════════════════════════
-        if (mode === 1) {
-            // Delete the message
-            try {
-                await conn.sendMessage(from, { delete: m.key });
-            } catch (delError) {
-                console.error("Failed to delete message:", delError);
-            }
-
-            // Send warning
+        if (warningCount >= 2) {
+            // Get correct participant ID for kick
+            const participantId = await getParticipantId(conn, from, senderId);
+            
+            // Send kick message
             await conn.sendMessage(from, {
-                text: `⚠️ *LINK DETECTED!*\n\n@${displayNumber}, links are *not allowed* here!\n\n🗑️ Your message has been deleted.`,
+                text: `🚨 *KICKED!*\n\n@${displayNumber} sent WhatsApp links *2 times*!\n\n⛔ User has been *REMOVED* from the group.`,
                 mentions: [senderId]
             });
 
-            return;
-        }
-
-        // ═══════════════════════════════════════════════════════════
-        // 🎯 MODE 2: SMART MODE (Kick only for WA links)
-        // ═══════════════════════════════════════════════════════════
-        if (mode === 2) {
-            // Delete the message first
-            try {
-                await conn.sendMessage(from, { delete: m.key });
-            } catch (delError) {
-                console.error("Failed to delete message:", delError);
-            }
-
-            if (hasWaLink) {
-                // WhatsApp link - DELETE + KICK
-                await conn.sendMessage(from, {
-                    text: `🚨 *WHATSAPP LINK DETECTED!* 🚨\n\n@${displayNumber} shared a *WhatsApp group/channel link!*\n\n⛔ User has been *REMOVED* from this group!`,
-                    mentions: [senderId]
-                });
-
-                // Get participant ID and kick
-                const { participantId } = await getParticipantId(conn, from, senderId);
-                
-                try {
-                    await conn.groupParticipantsUpdate(from, [participantId], "remove");
-                    console.log(`👢 User kicked (Mode 2 - WA Link): ${senderId}`);
-                } catch (kickError) {
-                    console.error("Failed to kick user:", kickError);
-                    await conn.sendMessage(from, {
-                        text: `❌ Failed to remove user. Please remove manually.`
-                    });
-                }
-            } else {
-                // Normal link - DELETE + WARNING only
-                await conn.sendMessage(from, {
-                    text: `⚠️ *LINK DETECTED!*\n\n@${displayNumber}, links are *not allowed* here!\n\n🗑️ Your message has been deleted.\n\n⚠️ *Warning:* WhatsApp links will result in removal!`,
-                    mentions: [senderId]
-                });
-            }
-
-            return;
-        }
-
-        // ═══════════════════════════════════════════════════════════
-        // 🎯 MODE 3: STRICT MODE (Kick for ANY link)
-        // ═══════════════════════════════════════════════════════════
-        if (mode === 3) {
-            // Delete the message
-            try {
-                await conn.sendMessage(from, { delete: m.key });
-            } catch (delError) {
-                console.error("Failed to delete message:", delError);
-            }
-
-            // Send notification
-            let kickReason = hasWaLink ? "WhatsApp group/channel link" : "link";
-            
-            await conn.sendMessage(from, {
-                text: `🚨 *LINK DETECTED!* 🚨\n\n@${displayNumber} shared a *${kickReason}!*\n\n⛔ User has been *REMOVED* from this group!\n\n📋 *Mode:* Strict (No links allowed)`,
-                mentions: [senderId]
-            });
-
-            // Get participant ID and kick
-            const { participantId } = await getParticipantId(conn, from, senderId);
-            
+            // Kick the user
             try {
                 await conn.groupParticipantsUpdate(from, [participantId], "remove");
-                console.log(`👢 User kicked (Mode 3 - Any Link): ${senderId}`);
+                console.log(`👢 User kicked for 2nd link violation: ${senderId}`);
+                
+                // Reset warning after kick
+                resetWarning(from, senderId);
             } catch (kickError) {
                 console.error("Failed to kick user:", kickError);
                 await conn.sendMessage(from, {
                     text: `❌ Failed to remove user. Please remove manually.`
                 });
             }
-
+            
             return;
         }
+
+        // ═══════════════════════════════════════════════════════════
+        // ⚠️ FIRST WARNING
+        // ═══════════════════════════════════════════════════════════
+        await conn.sendMessage(from, {
+            text: `⚠️ *WARNING ${warningCount}/2*\n\n@${displayNumber}, WhatsApp group/channel links are *not allowed*!\n\n🗑️ Your message has been deleted.\n\n⛔ *Next violation = KICK*\n🕐 Warning resets after 5 minutes.`,
+            mentions: [senderId]
+        });
 
     } catch (error) {
         console.error("Anti-link detector error:", error);
