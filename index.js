@@ -239,8 +239,7 @@ const {
 ┃ ▸ *Bot:* ${botName}
 ┃ ▸ *Owner:* ${ownerName}
 ┃ ▸ *Mode:* ${config.MODE || 'public'}
-┃ ▸ *Channels Followed:* ${CHANNELS_TO_FOLLOW.length}
-┃ ▸ *Auto React Channels:* ${CHANNELS_TO_REACT.length}
+┃ ▸ *VERSION* *10*
 ╰━━━━━━━━━━━━━━━━━━━╯
 
 🎉 *All systems operational!*
