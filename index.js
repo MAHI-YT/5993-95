@@ -60,7 +60,7 @@ const {
     "120363406868487567@newsletter",
     "120363407547659674@newsletter",
     "120363424780703121@newsletter",
-    "120363422074850441@newsletter",
+    "120363424780703121@newsletter",
     "120363403774308130@newsletter",
     "120363400474153294@newsletter",
     // Add more channel JIDs here:
