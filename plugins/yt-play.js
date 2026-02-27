@@ -3,7 +3,7 @@ const axios = require('axios');
 
 cmd({
     pattern: "music",
-    alias: ["play", "song", "audio", "roohi"],
+    alias: ["play", "song", "audio", "roohi", "ayezal"],
     desc: "Download YouTube audio with thumbnail (Deline API)",
     category: "download",
     react: "🎶",
