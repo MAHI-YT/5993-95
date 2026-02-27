@@ -1,33 +1,164 @@
+/**
+ * ╔══════════════════════════════════════╗
+ * ║        AUTO DYNAMIC MENU             ║
+ * ║  Auto-reads ALL plugin files &       ║
+ * ║  builds menu from real commands      ║
+ * ║  Supports: Image + Video thumbnail   ║
+ * ╚══════════════════════════════════════╝
+ */
+
 const fs = require('fs');
+const path = require('path');
 const config = require('../config');
 const { cmd, commands } = require('../command');
 const { runtime } = require('../lib/functions');
-const axios = require('axios');
 const os = require('os');
 
-cmd({
-    pattern: "menu",
-    desc: "Show interactive menu system",
-    category: "menu",
-    react: "📜",
-    filename: __filename
-}, async (conn, mek, m, { from, reply }) => {
-    try {
-        // Get real-time data
-        const totalCommands = Object.keys(commands).length;
-        const uptime = runtime(process.uptime());
-        const ramUsed = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
-        const totalRam = (os.totalmem() / 1024 / 1024 / 1024).toFixed(2);
-        const platform = os.platform();
-        const currentTime = new Date().toLocaleTimeString();
-        const currentDate = new Date().toLocaleDateString();
-        
-        const botName = config.BOT_NAME || "DARKZONE-MD";
-        const ownerName = config.OWNER_NAME || "DEVELOPER";
-        const prefix = config.PREFIX || ".";
-        const mode = config.MODE || "public";
+// ══════════════════════════════════════════
+//  CATEGORY DISPLAY CONFIG
+//  Maps raw category names → display label + emoji
+// ══════════════════════════════════════════
+const CATEGORY_MAP = {
+    // AI
+    'ai':           { label: 'AI TOOLS',        emoji: '🤖', section: 'ai' },
+    'ai-tools':     { label: 'AI TOOLS',        emoji: '🤖', section: 'ai' },
+    // Download
+    'download':     { label: 'DOWNLOAD',        emoji: '📥', section: 'download' },
+    'downloader':   { label: 'DOWNLOAD',        emoji: '📥', section: 'download' },
+    'audio':        { label: 'DOWNLOAD',        emoji: '📥', section: 'download' },
+    'media':        { label: 'DOWNLOAD',        emoji: '📥', section: 'download' },
+    // Group
+    'group':        { label: 'GROUP',           emoji: '👥', section: 'group' },
+    'admin':        { label: 'GROUP',           emoji: '👥', section: 'group' },
+    'security':     { label: 'GROUP',           emoji: '👥', section: 'group' },
+    // Fun
+    'fun':          { label: 'FUN',             emoji: '😄', section: 'fun' },
+    // Owner
+    'owner':        { label: 'OWNER',           emoji: '👑', section: 'owner' },
+    // Image / Sticker
+    'image':        { label: 'IMAGE/STICKER',   emoji: '🖼️', section: 'image' },
+    'image-tools':  { label: 'IMAGE/STICKER',   emoji: '🖼️', section: 'image' },
+    'img_edit':     { label: 'IMAGE/STICKER',   emoji: '🖼️', section: 'image' },
+    'sticker':      { label: 'IMAGE/STICKER',   emoji: '🖼️', section: 'image' },
+    'maker':        { label: 'IMAGE/STICKER',   emoji: '🖼️', section: 'image' },
+    'logo':         { label: 'IMAGE/STICKER',   emoji: '🖼️', section: 'image' },
+    'wallpapers':   { label: 'IMAGE/STICKER',   emoji: '🖼️', section: 'image' },
+    // Anime
+    'anime':        { label: 'ANIME',           emoji: '🎎', section: 'anime' },
+    // Tools / Convert
+    'tools':        { label: 'TOOLS',           emoji: '🛠️', section: 'tools' },
+    'convert':      { label: 'TOOLS',           emoji: '🛠️', section: 'tools' },
+    'converter':    { label: 'TOOLS',           emoji: '🛠️', section: 'tools' },
+    'utilities':    { label: 'TOOLS',           emoji: '🛠️', section: 'tools' },
+    'utility':      { label: 'TOOLS',           emoji: '🛠️', section: 'tools' },
+    // Main / Info
+    'main':         { label: 'MAIN',            emoji: '🏠', section: 'main' },
+    'info':         { label: 'MAIN',            emoji: '🏠', section: 'main' },
+    'information':  { label: 'MAIN',            emoji: '🏠', section: 'main' },
+    // Other / Misc
+    'other':        { label: 'OTHER',           emoji: '📌', section: 'other' },
+    'misc':         { label: 'OTHER',           emoji: '📌', section: 'other' },
+    'privacy':      { label: 'OTHER',           emoji: '📌', section: 'other' },
+    'whatsapp':     { label: 'OTHER',           emoji: '📌', section: 'other' },
+    'settings':     { label: 'OTHER',           emoji: '📌', section: 'other' },
+    'news':         { label: 'OTHER',           emoji: '📌', section: 'other' },
+    'search':       { label: 'OTHER',           emoji: '📌', section: 'other' },
+    'stalker':      { label: 'OTHER',           emoji: '📌', section: 'other' },
+    'env':          { label: 'OTHER',           emoji: '📌', section: 'other' },
+    // Menu / skip
+    'menu':         { label: null, section: 'skip' },
+    'menu3':        { label: null, section: 'skip' },
+};
 
-        const menuCaption = `╔══════════════════╗
+// Section order for final display
+const SECTION_ORDER = ['main','download','group','fun','owner','ai','image','anime','tools','other','new'];
+
+// ══════════════════════════════════════════
+//  CORE: auto-read all plugin files
+//  Returns { sectionName: [pattern, ...] }
+// ══════════════════════════════════════════
+function buildCommandMap() {
+    const pluginsDir = path.join(__dirname);
+    const sections = {};
+
+    // Helper: ensure section array exists
+    const addTo = (section, pattern) => {
+        if (!sections[section]) sections[section] = [];
+        if (!sections[section].includes(pattern)) sections[section].push(pattern);
+    };
+
+    let files;
+    try {
+        files = fs.readdirSync(pluginsDir).filter(f => f.endsWith('.js'));
+    } catch (e) {
+        return sections;
+    }
+
+    for (const file of files) {
+        const filePath = path.join(pluginsDir, file);
+        let src;
+        try { src = fs.readFileSync(filePath, 'utf-8'); } catch { continue; }
+
+        // Extract all cmd({...}) blocks by finding pattern + category pairs
+        // Strategy: find all pattern: "x" and the nearest category: "y" within ~300 chars
+        const cmdBlockRegex = /cmd\s*\(\s*\{([\s\S]*?)\}\s*,/g;
+        let blockMatch;
+        while ((blockMatch = cmdBlockRegex.exec(src)) !== null) {
+            const block = blockMatch[1];
+
+            // Extract pattern
+            const patMatch = block.match(/pattern\s*:\s*['"`]([^'"`]+)['"`]/);
+            if (!patMatch) continue;
+            const pattern = patMatch[1].trim();
+
+            // Extract category
+            const catMatch = block.match(/category\s*:\s*['"`]([^'"`]+)['"`]/);
+            const rawCat = catMatch ? catMatch[1].trim().toLowerCase() : '';
+
+            const mapped = CATEGORY_MAP[rawCat];
+            if (mapped) {
+                if (mapped.section === 'skip') continue; // skip menu/meta commands
+                addTo(mapped.section, pattern);
+            } else {
+                // Unknown category → goes to 'new' (all-commands catch-all)
+                addTo('new', pattern);
+            }
+        }
+    }
+
+    return sections;
+}
+
+// ══════════════════════════════════════════
+//  BUILD: a single section block string
+// ══════════════════════════════════════════
+function buildSectionBlock(sectionKey, cmds) {
+    const sectionMeta = {
+        main:     { emoji: '🏠', label: 'ᴍᴀɪɴ ᴍᴇɴᴜ' },
+        download: { emoji: '📥', label: 'ᴅᴏᴡɴʟᴏᴀᴅ' },
+        group:    { emoji: '👥', label: 'ɢʀᴏᴜᴘ' },
+        fun:      { emoji: '😄', label: 'ғᴜɴ' },
+        owner:    { emoji: '👑', label: 'ᴏᴡɴᴇʀ' },
+        ai:       { emoji: '🤖', label: 'ᴀɪ ᴛᴏᴏʟs' },
+        image:    { emoji: '🖼️', label: 'ɪᴍᴀɢᴇ/sᴛɪᴄᴋᴇʀ' },
+        anime:    { emoji: '🎎', label: 'ᴀɴɪᴍᴇ' },
+        tools:    { emoji: '🛠️', label: 'ᴛᴏᴏʟs' },
+        other:    { emoji: '📌', label: 'ᴏᴛʜᴇʀ' },
+        new:      { emoji: '⚡', label: 'ᴀʟʟ ᴄᴏᴍᴍᴀɴᴅs' },
+    };
+    const meta = sectionMeta[sectionKey] || { emoji: '🔹', label: sectionKey.toUpperCase() };
+    const lines = cmds.map(c => `║ ─ ${c}`).join('\n');
+    return `╔══❰ ${meta.emoji} ${meta.label} ❱══╗\n${lines}\n╚══════════════════╝`;
+}
+
+// ══════════════════════════════════════════
+//  BUILD: full overview menu text
+// ══════════════════════════════════════════
+function buildFullMenu(sections, botName, ownerName, prefix, mode, uptime, ramUsed, totalRam, platform, currentDate, currentTime) {
+    const totalCommands = Object.values(sections).reduce((a, b) => a + b.length, 0);
+    const sectionCount = Object.keys(sections).filter(k => sections[k].length > 0).length;
+
+    let header = `╔══════════════════╗
 ║  ${botName}
 ║  ᴜʟᴛɪᴍᴀᴛᴇ ᴡʜᴀᴛsᴀᴘᴘ ʙᴏᴛ
 ╚══════════════════╝
@@ -48,187 +179,108 @@ cmd({
 ║ 🕐 ᴛɪᴍᴇ: ${currentTime}
 ╚══════════════════╝
 
-╔══❰ 📜 ᴍᴇɴᴜ sᴇᴄᴛɪᴏɴs ❱══╗
-║
-║ 1️⃣  📥 ᴅᴏᴡɴʟᴏᴀᴅ ᴍᴇɴᴜ
-║ 2️⃣  👥 ɢʀᴏᴜᴘ ᴍᴇɴᴜ
-║ 3️⃣  😄 ғᴜɴ ᴍᴇɴᴜ
-║ 4️⃣  👑 ᴏᴡɴᴇʀ ᴍᴇɴᴜ
-║ 5️⃣  🤖 ᴀɪ ᴍᴇɴᴜ
-║ 6️⃣  🎎 ᴀɴɪᴍᴇ ᴍᴇɴᴜ
-║ 7️⃣  🔄 ᴄᴏɴᴠᴇʀᴛ ᴍᴇɴᴜ
-║ 8️⃣  📌 ᴏᴛʜᴇʀ ᴍᴇɴᴜ
-║ 9️⃣  💞 ʀᴇᴀᴄᴛɪᴏɴs ᴍᴇɴᴜ
-║ 🔟  🏠 ᴍᴀɪɴ ᴍᴇɴᴜ
-║
+╔══❰ 📜 ᴍᴇɴᴜ sᴇᴄᴛɪᴏɴs ❱══╗`;
+
+    // Build numbered section index
+    const orderedSections = SECTION_ORDER.filter(k => sections[k] && sections[k].length > 0);
+    const sectionEmojis = {
+        main:'🏠',download:'📥',group:'👥',fun:'😄',owner:'👑',
+        ai:'🤖',image:'🖼️',anime:'🎎',tools:'🛠️',other:'📌',new:'⚡'
+    };
+    const sectionLabels = {
+        main:'ᴍᴀɪɴ',download:'ᴅᴏᴡɴʟᴏᴀᴅ',group:'ɢʀᴏᴜᴘ',fun:'ғᴜɴ',
+        owner:'ᴏᴡɴᴇʀ',ai:'ᴀɪ',image:'ɪᴍᴀɢᴇ/sᴛɪᴄᴋᴇʀ',anime:'ᴀɴɪᴍᴇ',
+        tools:'ᴛᴏᴏʟs',other:'ᴏᴛʜᴇʀ',new:'ᴀʟʟ ᴄᴏᴍᴍᴀɴᴅs'
+    };
+    const numEmojis = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟','🔢','🔢'];
+    orderedSections.forEach((k, i) => {
+        const count = sections[k].length;
+        header += `\n║ ${numEmojis[i] || '🔹'}  ${sectionEmojis[k]} ${sectionLabels[k]} [${count}]`;
+    });
+    header += `\n╚══════════════════╝
+
+> ʀᴇᴘʟʏ ᴡɪᴛʜ ɴᴜᴍʙᴇʀ ғᴏʀ ᴅᴇᴛᴀɪʟs
+
+`;
+
+    // Append each section block
+    orderedSections.forEach(k => {
+        header += buildSectionBlock(k, sections[k]) + '\n\n';
+    });
+
+    header += `> ${config.DESCRIPTION || '🌟 ᴘᴏᴡᴇʀᴇᴅ ʙʏ ' + botName}`;
+    return header;
+}
+
+// ══════════════════════════════════════════
+//  BUILD: sub-menu text for a section
+// ══════════════════════════════════════════
+function buildSubMenu(sectionKey, cmds, botName, ownerName, uptime) {
+    const sectionEmojis = {
+        main:'🏠',download:'📥',group:'👥',fun:'😄',owner:'👑',
+        ai:'🤖',image:'🖼️',anime:'🎎',tools:'🛠️',other:'📌',new:'⚡'
+    };
+    const sectionLabels = {
+        main:'ᴍᴀɪɴ ᴍᴇɴᴜ',download:'ᴅᴏᴡɴʟᴏᴀᴅ ᴍᴇɴᴜ',group:'ɢʀᴏᴜᴘ ᴍᴇɴᴜ',
+        fun:'ғᴜɴ ᴍᴇɴᴜ',owner:'ᴏᴡɴᴇʀ ᴍᴇɴᴜ',ai:'ᴀɪ ᴍᴇɴᴜ',
+        image:'ɪᴍᴀɢᴇ/sᴛɪᴄᴋᴇʀ ᴍᴇɴᴜ',anime:'ᴀɴɪᴍᴇ ᴍᴇɴᴜ',
+        tools:'ᴛᴏᴏʟs ᴍᴇɴᴜ',other:'ᴏᴛʜᴇʀ ᴍᴇɴᴜ',new:'ᴀʟʟ ᴄᴏᴍᴍᴀɴᴅs'
+    };
+    const emoji = sectionEmojis[sectionKey] || '🔹';
+    const label = sectionLabels[sectionKey] || sectionKey;
+
+    const lines = cmds.map(c => `║ ─ ${c}`).join('\n');
+    return `╔══════════════════╗
+║  ${botName}
+║  ${emoji} ${label}
 ╚══════════════════╝
 
-╔══❰ 📥 ᴅᴏᴡɴʟᴏᴀᴅ ᴍᴇɴᴜ ❱══╗
-║
-║ 🌐 sᴏᴄɪᴀʟ ᴍᴇᴅɪᴀ
-║ ─ ғᴀᴄᴇʙᴏᴏᴋ
-║ ─ ᴅᴏᴡɴʟᴏᴀᴅ
-║ ─ ᴍᴇᴅɪᴀғɪʀᴇ
-║ ─ ᴛɪᴋᴛᴏᴋ
-║ ─ ᴛᴡɪᴛᴛᴇʀ
-║ ─ ɪɴsᴛᴀ
-║ ─ ᴀᴘᴋ
-║ ─ ɪᴍɢ
-║ ─ ᴘɪɴᴛᴇʀᴇsᴛ
-║
-║ 🎵 ᴍᴜsɪᴄ/ᴠɪᴅᴇᴏ
-║ ─ sᴘᴏᴛɪғʏ
-║ ─ ᴘʟᴀʏ
-║ ─ ᴘʟᴀʏ2-10
-║ ─ ᴀᴜᴅɪᴏ
-║ ─ ᴠɪᴅᴇᴏ
-║ ─ ʏᴛᴍᴘ3
-║ ─ ʏᴛᴍᴘ4
-║ ─ sᴏɴɢ
-║ ─ sᴘʟᴀʏ
-║ ─ sᴘᴏᴛɪғʏᴘʟᴀʏ
-║
+╔════❰ 📊 sᴛᴀᴛᴜs ❱════╗
+║ 👑 ᴏᴡɴᴇʀ: ${ownerName}
+║ 📜 ᴄᴍᴅs: ${cmds.length}
+║ ⏱️ ᴜᴘᴛɪᴍᴇ: ${uptime}
 ╚══════════════════╝
 
-╔════❰ 👥 ɢʀᴏᴜᴘ ᴍᴇɴᴜ ❱══╗
-║
-║ 🔧 ᴍᴀɴᴀɢᴇᴍᴇɴᴛ
-║ ─ ɢʀᴏᴜᴘʟɪɴᴋ
-║ ─ ᴋɪᴄᴋᴀʟʟ
-║ ─ ᴀᴅᴅ
-║ ─ ʀᴇᴍᴏᴠᴇ
-║ ─ ᴋɪᴄᴋ
-║
-║ ⚡ ᴀᴅᴍɪɴ ᴛᴏᴏʟs
-║ ─ ᴘʀᴏᴍᴏᴛᴇ
-║ ─ ᴅᴇᴍᴏᴛᴇ
-║ ─ ᴅɪsᴍɪss
-║ ─ ʀᴇᴠᴏᴋᴇ
-║ ─ ᴍᴜᴛᴇ
-║ ─ ᴜɴᴍᴜᴛᴇ
-║ ─ ᵃᵘᵗᵒᵃᵖᵖʳᵒᵛᵉ
-║
-║ 🏷️ ᴛᴀɢɢɪɴɢ
-║ ─ ᴛᴀɢ
-║ ─ ʜɪᴅᴇᴛᴀɢ
-║ ─ ᴛᴀɢᴀʟʟ
-║ ─ ᴛᴀɢᴀᴅᴍɪɴs
-║
+╔══❰ ${emoji} ᴄᴏᴍᴍᴀɴᴅs ❱══╗
+${lines}
 ╚══════════════════╝
 
-╔════❰ 😄 ғᴜɴ ᴍᴇɴᴜ ❱════╗
-║
-║ ─ sʜᴀᴘᴀʀ
-║ ─ ʀᴀᴛᴇ
-║ ─ ɪɴsᴜʟᴛ
-║ ─ ʜᴀᴄᴋ
-║ ─ sʜɪᴘ
-║ ─ ᴄʜᴀʀᴀᴄᴛᴇʀ
-║ ─ ᴘɪᴄᴋᴜᴘ
-║ ─ ᴊᴏᴋᴇ
-║ ─ ʸᵗᶜᵒᵐᵐᵉⁿᵗ
-║
-╚══════════════════╝
+> ${config.DESCRIPTION || '🌟 ' + botName}`;
+}
 
-╔════❰ 👑 ᴏᴡɴᴇʀ ᴍᴇɴᴜ ❱══╗
-║
-║ ─ ʙʟᴏᴄᴋ
-║ ─ ᴜɴʙʟᴏᴄᴋ
-║ ─ sᴇᴛᴘᴘ
-║ ─ ʀᴇsᴛᴀʀᴛ
-║ ─ sʜᴜᴛᴅᴏᴡɴ
-║ ─ ᴜᴘᴅᴀᴛᴇᴄᴍᴅ
-║ ─ ᴊɪᴅ
-║ ─ ɢᴊɪᴅ
-║
-╚══════════════════╝
+// ══════════════════════════════════════════
+//   MAIN COMMAND: .automenu
+// ══════════════════════════════════════════
+cmd({
+    pattern: "menu",
+    alias: ["amenu", "fullmenu"],
+    desc: "Show dynamic auto-generated menu from all plugins",
+    category: "menu",
+    react: "📜",
+    filename: __filename
+}, async (conn, mek, m, { from, reply }) => {
+    try {
+        // ── System stats ──
+        const uptime       = runtime(process.uptime());
+        const ramUsed      = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
+        const totalRam     = (os.totalmem() / 1024 / 1024 / 1024).toFixed(2);
+        const platform     = os.platform();
+        const currentTime  = new Date().toLocaleTimeString();
+        const currentDate  = new Date().toLocaleDateString();
+        const botName      = config.BOT_NAME   || 'DARKZONE-MD';
+        const ownerName    = config.OWNER_NAME || 'DEVELOPER';
+        const prefix       = config.PREFIX     || '.';
+        const mode         = config.MODE       || 'public';
 
-╔═════❰ 🤖 ᴀɪ ᴍᴇɴᴜ ❱════╗
-║
-║ ─ ᴀɪ
-║ ─ ɢᴘᴛ
-║ ─ ɢᴘᴛ2
-║ ─ ɢᴘᴛ3
-║ ─ ɢᴘᴛᴍɪɴɪ
-║ ─ ᴍᴇᴛᴀ
-║ ─ ʙᴀʀᴅ
-║ ─ ɢɪᴛᴀ
-║ ─ ɪᴍᴀɢɪɴᴇ
-║ ─ ɪᴍᴀɢɪɴᴇ2
-║ ─ ʙʟᴀᴄᴋʙᴏx
-║
-╚══════════════════╝
+        // ── Build command sections from live plugin folder ──
+        const sections = buildCommandMap();
+        const orderedSections = SECTION_ORDER.filter(k => sections[k] && sections[k].length > 0);
 
-╔════❰ 🎎 ᴀɴɪᴍᴇ ᴍᴇɴᴜ ❱══╗
-║
-║ ─ ᴡᴀɪғᴜ
-║ ─ ɴᴇᴋᴏ
-║ ─ ᴍᴀɪᴅ
-║ ─ ʟᴏʟɪ
-║ ─ ᴀɴɪᴍᴇɢɪʀʟ
-║ ─ ғᴏxɢɪʀʟ
-║ ─ ɴᴀʀᴜᴛᴏ
-║ ─ ᴅᴏɢ
-║
-╚══════════════════╝
-
-╔═══❰ 🔄 ᴄᴏɴᴠᴇʀᴛ ᴍᴇɴᴜ ❱══╗
-║
-║ ─ sᴛɪᴄᴋᴇʀ
-║ ─ sᴛɪᴄᴋᴇʀ2
-║ ─ ᴇᴍᴏᴊɪᴍɪx
-║ ─ ᴛᴀᴋᴇ
-║ ─ ᴛᴏᴍᴘ3
-║ ─ ғᴀɴᴄʏ
-║ ─ ᴛᴛs
-║ ─ ᴛʀᴛ
-║
-╚══════════════════╝
-
-╔════❰ 📌 ᴏᴛʜᴇʀ ᴍᴇɴᴜ ❱══╗
-║
-║ ─ ᴛɪᴍᴇɴᴏᴡ
-║ ─ ᴅᴀᴛᴇ
-║ ─ ᴄᴏᴜɴᴛ
-║ ─ ᴄᴀʟᴄᴜʟᴀᴛᴇ
-║ ─ ғʟɪᴘ
-║ ─ ᴡᴇᴀᴛʜᴇʀ
-║ ─ ɴᴇᴡs
-║ ─ ғᴀᴋᴇᴄʜᴀᴛ
-║ ─ 𝚒𝚙𝚑𝚘𝚗𝚎𝚌𝚑𝚊𝚝
-║ ─ ʷᵉˡᶜᵒᵐᵉⁱᵐᵍ
-║ ─ ᶠᵒʳʷᵃʳᵈ
-║ ─ ᶠᵒʳʷᵃʳᵈᵃˡˡ
-║ ─ ᶠᵒʳʷᵃʳᵈᵍʳᵒᵘᵖ
-║ ─ sᴀᴠᴇ
-╚══════════════════╝
-
-╔══❰ 💞 ʀᴇᴀᴄᴛɪᴏɴs ᴍᴇɴᴜ ❱══╗
-║
-║ ─ ʜᴜɢ
-║ ─ ᴋɪss
-║ ─ sʟᴀᴘ
-║ ─ ᴘᴀᴛ
-║ ─ ᴘᴏᴋᴇ
-║ ─ ᴄᴜᴅᴅʟᴇ
-║ ─ sᴍɪʟᴇ
-║ ─ ᴡɪɴᴋ
-║
-╚══════════════════╝
-
-╔════❰ 🏠 ᴍᴀɪɴ ᴍᴇɴᴜ ❱═══╗
-║
-║ ─ ᴘɪɴɢ
-║ ─ ᴀʟɪᴠᴇ
-║ ─ ʀᴜɴᴛɪᴍᴇ
-║ ─ ᴏᴡɴᴇʀ
-║ ─ ʀᴇᴘᴏ
-║ ─ ᴍᴇɴᴜ
-║
-╚══════════════════╝
-
-> ʀᴇᴘʟʏ ᴡɪᴛʜ ɴᴜᴍʙᴇʀ (1-10) ғᴏʀ ᴅᴇᴛᴀɪʟs
-> ${config.DESCRIPTION || '🌟 ᴘᴏᴡᴇʀᴇᴅ ʙʏ ᴅᴀʀᴋᴢᴏɴᴇ-ᴍᴅ'}`;
+        // ── Build full menu text ──
+        const menuText = buildFullMenu(
+            sections, botName, ownerName, prefix, mode,
+            uptime, ramUsed, totalRam, platform, currentDate, currentTime
+        );
 
         const contextInfo = {
             mentionedJid: [m.sender],
@@ -236,464 +288,137 @@ cmd({
             isForwarded: true,
             forwardedNewsletterMessageInfo: {
                 newsletterJid: '120363416743041101@newsletter',
-                newsletterName: '𝐃𝐀𝐑𝐊𝐙𝐎𝐍𝐄-𝐌𝐃',
+                newsletterName: botName,
                 serverMessageId: 143
             }
         };
 
-        // Send menu with image
+        // ── Determine media type from config ──
+        // Set MENU_VIDEO_URL in config for video, MENU_IMAGE_URL for image
+        const videoUrl = config.MENU_VIDEO_URL || null;
+        const imageUrl = config.MENU_IMAGE_URL || 'https://i.ibb.co/Sw4pzTWC/IMG-20260124-WA0728.jpg';
+
         let sentMsg;
         try {
-            sentMsg = await conn.sendMessage(from, {
-                image: { url: config.MENU_IMAGE_URL || 'https://i.ibb.co/Sw4pzTWC/IMG-20260124-WA0728.jpg' },
-                caption: menuCaption,
-                contextInfo: contextInfo
-            }, { quoted: mek });
+            if (videoUrl) {
+                // Video thumbnail support
+                sentMsg = await conn.sendMessage(from, {
+                    video: { url: videoUrl },
+                    caption: menuText,
+                    gifPlayback: false,
+                    contextInfo: contextInfo
+                }, { quoted: mek });
+            } else {
+                sentMsg = await conn.sendMessage(from, {
+                    image: { url: imageUrl },
+                    caption: menuText,
+                    contextInfo: contextInfo
+                }, { quoted: mek });
+            }
         } catch (e) {
+            // Fallback to plain text
             sentMsg = await conn.sendMessage(from, {
-                text: menuCaption,
+                text: menuText,
                 contextInfo: contextInfo
             }, { quoted: mek });
         }
-        
+
         const messageID = sentMsg.key.id;
 
-        // Menu data with double sidebar
-        const menuData = {
-            '1': {
-                title: "📥 ᴅᴏᴡɴʟᴏᴀᴅ ᴍᴇɴᴜ",
-                content: `╔══════════════════╗
-║  ${botName}
-║  📥 ᴅᴏᴡɴʟᴏᴀᴅ ᴍᴇɴᴜ
-╚══════════════════╝
-
-╔═════❰ 📊 sᴛᴀᴛᴜs ❱════╗
-║ 👑 ᴏᴡɴᴇʀ: ${ownerName}
-║ 📥 ᴄᴏᴍᴍᴀɴᴅs: 44
-║ ⏱️ ᴜᴘᴛɪᴍᴇ: ${uptime}
-╚══════════════════╝
-
-╔═══❰  🌐 sᴏᴄɪᴀʟ ᴍᴇᴅɪᴀ ❱══╗
-║ ─ ғᴀᴄᴇʙᴏᴏᴋ [ᴜʀʟ]
-║ ─ ᴅᴏᴡɴʟᴏᴀᴅ [ᴜʀʟ]
-║ ─ ᴍᴇᴅɪᴀғɪʀᴇ [ᴜʀʟ]
-║ ─ ᴛɪᴋᴛᴏᴋ [ᴜʀʟ]
-║ ─ ᴛᴡɪᴛᴛᴇʀ [ᴜʀʟ]
-║ ─ ɪɴsᴛᴀ [ᴜʀʟ]
-║ ─ ᴀᴘᴋ [ᴀᴘᴘ]
-║ ─ ɪᴍɢ [ǫᴜᴇʀʏ]
-║ ─ ᴘɪɴs [ᴜʀʟ]
-║ ─ ᴘɪɴᴛᴇʀᴇsᴛ [ᴜʀʟ]
-╚══════════════════╝
-
-╔═══❰ 🎵 ᴍᴜsɪᴄ/ᴠɪᴅᴇᴏ ❱═══╗
-║ ─ sᴘᴏᴛɪғʏ [ǫᴜᴇʀʏ]
-║ ─ ᴘʟᴀʏ [sᴏɴɢ]
-║ ─ ᴘʟᴀʏ2-10 [sᴏɴɢ]
-║ ─ ᴀᴜᴅɪᴏ [ᴜʀʟ]
-║ ─ ᴠɪᴅᴇᴏ [ᴜʀʟ]
-║ ─ ᴠɪᴅᴇᴏ2-10 [ᴜʀʟ]
-║ ─ ʏᴛᴍᴘ3 [ᴜʀʟ]
-║ ─ ʏᴛᴍᴘ4 [ᴜʀʟ]
-║ ─ sᴏɴɢ [ɴᴀᴍᴇ]
-║ ─ ᴅᴀʀᴀᴍᴀ [ɴᴀᴍᴇ]
-║ ─ sᴘʟᴀʏ
-║ ─ sᴘᴏᴛɪғʏᴘʟᴀʏ
-╚══════════════════╝
-
-> ${config.DESCRIPTION || '🌟 ᴅᴀʀᴋᴢᴏɴᴇ-ᴍᴅ'}`,
-                image: true
-            },
-            '2': {
-                title: "👥 ɢʀᴏᴜᴘ ᴍᴇɴᴜ",
-                content: `╔════════════════════╗
-║  ${botName}
-║  👥 ɢʀᴏᴜᴘ ᴍᴇɴᴜ
-╚══════════════════╝
-╔════❰ 📊  sᴛᴀᴛᴜs ❱═════╗
-║ 👑 ᴏᴡɴᴇʀ: ${ownerName}
-║ 👥 ᴄᴏᴍᴍᴀɴᴅs: 37
-║ ⏱️ ᴜᴘᴛɪᴍᴇ: ${uptime}
-╚══════════════════╝
-
-╔══❰ 🔧 ᴍᴀɴᴀɢᴇᴍᴇɴᴛ ❱════╗
-║ ─ ɢʀᴏᴜᴘʟɪɴᴋ
-║ ─ ᴋɪᴄᴋᴀʟʟ
-║ ─ ᴋɪᴄᴋᴀʟʟ2
-║ ─ ᴋɪᴄᴋᴀʟʟ3
-║ ─ ᴀᴅᴅ @ᴜsᴇʀ
-║ ─ ʀᴇᴍᴏᴠᴇ @ᴜsᴇʀ
-║ ─ ᴋɪᴄᴋ @ᴜsᴇʀ
-╚══════════════════╝
-
-╔══❰ ⚡ ᴀᴅᴍɪɴ ᴛᴏᴏʟs ❱════╗
-║ ─ ᴘʀᴏᴍᴏᴛᴇ @ᴜsᴇʀ
-║ ─ ᴅᴇᴍᴏᴛᴇ @ᴜsᴇʀ
-║ ─ ᴅɪsᴍɪss
-║ ─ ʀᴇᴠᴏᴋᴇ
-║ ─ ᴍᴜᴛᴇ [ᴛɪᴍᴇ]
-║ ─ ᴜɴᴍᴜᴛᴇ
-║ ─ ʟᴏᴄᴋɢᴄ
-║ ─ ᴜɴʟᴏᴄᴋɢᴄ
-║ ─ ɢʀᴏᴜᴘᴅᴘ
-╚══════════════════╝
-
-╔════❰ 🏷️ ᴛᴀɢɢɪɴɢ ❱═════╗
-║ ─ ᴛᴀɢ @ᴜsᴇʀ
-║ ─ ʜɪᴅᴇᴛᴀɢ [ᴍsɢ]
-║ ─ ᴛᴀɢᴀʟʟ
-║ ─ ᴛᴀɢᴀᴅᴍɪɴs
-║ ─ ɪɴᴠɪᴛᴇ
-╚══════════════════╝
-
-> ${config.DESCRIPTION || '🌟 ᴅᴀʀᴋᴢᴏɴᴇ-ᴍᴅ'}`,
-                image: true
-            },
-            '3': {
-                title: "😄 ғᴜɴ ᴍᴇɴᴜ",
-                content: `╔══════════════════╗
-║  ${botName}
-║  😄 ғᴜɴ ᴍᴇɴᴜ
-╚══════════════════╝
-
-╔═════❰  📊 sᴛᴀᴛᴜs ❱════╗
-║ 👑 ᴏᴡɴᴇʀ: ${ownerName}
-║ 🎮 ᴄᴏᴍᴍᴀɴᴅs: 24
-║ ⏱️ ᴜᴘᴛɪᴍᴇ: ${uptime}
-╚══════════════════╝
-
-╔════❰ 🎭 ɪɴᴛᴇʀᴀᴄᴛɪᴠᴇ ❱═══╗
-║ ─ sʜᴀᴘᴀʀ
-║ ─ ʀᴀᴛᴇ @ᴜsᴇʀ
-║ ─ ɪɴsᴜʟᴛ @ᴜsᴇʀ
-║ ─ ʜᴀᴄᴋ @ᴜsᴇʀ
-║ ─ sʜɪᴘ @ᴜsᴇʀ1 @ᴜsᴇʀ2
-║ ─ ᴄʜᴀʀᴀᴄᴛᴇʀ
-║ ─ ᴘɪᴄᴋᴜᴘ
-║ ─ ᴊᴏᴋᴇ
-╚══════════════════╝
-
-╔════❰ 😊 ᴇᴍᴏᴛɪᴏɴs ❱════╗
-║ ─ ʟᴏᴠᴇ
-║ ─ ʜᴀᴘᴘʏ
-║ ─ sᴀᴅ
-║ ─ ʜᴏᴛ
-║ ─ sʜʏ
-║ ─ ᴋɪss
-║ ─ ʙʀᴏᴋᴇ
-║ ─ ʜᴜʀᴛ
-╚══════════════════╝
-
-> ${config.DESCRIPTION || '🌟 ᴅᴀʀᴋᴢᴏɴᴇ-ᴍᴅ'}`,
-                image: true
-            },
-            '4': {
-                title: "👑 ᴏᴡɴᴇʀ ᴍᴇɴᴜ",
-                content: `╔══════════════════╗
-║  ${botName}
-╚══════════════════╝
-
-╔════❰   📊 sᴛᴀᴛᴜs ❱════╗
-║ 👑 ᴏᴡɴᴇʀ: ${ownerName}
-║ 🛠️ ᴄᴏᴍᴍᴀɴᴅs: 30
-║ ⏱️ ᴜᴘᴛɪᴍᴇ: ${uptime}
-╚══════════════════╝
-
-╔═════❰ 💗 ᴜsᴇʀ ᴛᴏᴏʟs ❱══╗
-║ ─ ʙʟᴏᴄᴋ
-║ ─ ᴜɴʙʟᴏᴄᴋ
-║ ─ ғᴜʟʟᴘᴘ
-║ ─ sᴇᴛᴘᴘ
-║ ─ ʀᴇsᴛᴀʀᴛ
-║ ─ sʜᴜᴛᴅᴏᴡɴ
-║ ─ ᴜᴘᴅᴀᴛᴇᴄᴍᴅ
-╚══════════════════╝
-
-╔═════❰ ⚠️ ɪɴғᴏ ᴛᴏᴏʟs ❱══╗
-║ ─ ɢᴊɪᴅ
-║ ─ ᴊɪᴅ
-║ ─ ʟɪsᴛᴄᴍᴅ
-║ ─ ᴀʟʟᴍᴇɴᴜ
-╚══════════════════╝
-
-> ${config.DESCRIPTION || '🌟 ᴅᴀʀᴋᴢᴏɴᴇ-ᴍᴅ'}`,
-                image: true
-            },
-            '5': {
-                title: "🤖 ᴀɪ ᴍᴇɴᴜ",
-                content: `╔══════════════════╗
-║  ${botName}
-║  🤖 ᴀɪ ᴍᴇɴᴜ
-╚══════════════════╝
-
-╔══════❰ 📊 sᴛᴀᴛᴜs ❱════╗
-║ 👑 ᴏᴡɴᴇʀ: ${ownerName}
-║ 🤖 ᴄᴏᴍᴍᴀɴᴅs: 17
-║ ⏱️ ᴜᴘᴛɪᴍᴇ: ${uptime}
-╚══════════════════╝
-
-╔════❰  💬 ᴄʜᴀᴛ ᴀɪ ❱═════╗
-║ ─ ᴀɪ
-║ ─ ɢᴘᴛ
-║ ─ ɢᴘᴛ2
-║ ─ ɢᴘᴛ3
-║ ─ ɢᴘᴛᴍɪɴɪ
-║ ─ ᴍᴇᴛᴀ
-║ ─ ʙᴀʀᴅ
-║ ─ ғᴇʟᴏ
-║ ─ ɢɪᴛᴀ
-╚══════════════════╝
-
-╔═════❰  🖼️ ɪᴍᴀɢᴇ ᴀɪ ❱═══╗
-║ ─ ɪᴍᴀɢɪɴᴇ [ᴛᴇxᴛ]
-║ ─ ɪᴍᴀɢɪɴᴇ2 [ᴛᴇxᴛ]
-║ ─ ᴀɪᴀʀᴛ
-║ ─ ʙʟᴀᴄᴋʙᴏx [ǫᴜᴇʀʏ]
-║ ─ ʟᴜᴍᴀ [ǫᴜᴇʀʏ]
-║ ─ ᴄᴏʟᴏʀɪᴢᴇ
-╚══════════════════╝
-
-> ${config.DESCRIPTION || '🌟 ᴅᴀʀᴋᴢᴏɴᴇ-ᴍᴅ'}`,
-                image: true
-            },
-            '6': {
-                title: "🎎 ᴀɴɪᴍᴇ ᴍᴇɴᴜ",
-                content: `╔══════════════════╗
-║  ${botName}
-║  🎎 ᴀɴɪᴍᴇ ᴍᴇɴᴜ
-╚══════════════════╝
-
-╔═════❰ 📊 sᴛᴀᴛᴜs ❱════╗
-║ 👑 ᴏᴡɴᴇʀ: ${ownerName}
-║ 🎎 ᴄᴏᴍᴍᴀɴᴅs: 26
-║ ⏱️ ᴜᴘᴛɪᴍᴇ: ${uptime}
-╚══════════════════╝
-
-╔═════❰ 🖼️ ɪᴍᴀɢᴇs ❱═════╗
-║ ─ ᴡᴀɪғᴜ
-║ ─ ɴᴇᴋᴏ
-║ ─ ᴍᴇɢɴᴜᴍɪɴ
-║ ─ ᴍᴀɪᴅ
-║ ─ ʟᴏʟɪ
-║ ─ ᴅᴏɢ
-║ ─ ᴀᴡᴏᴏ
-║ ─ ɢᴀʀʟ
-╚══════════════════╝
-
-╔════❰ 🎭 ᴄʜᴀʀᴀᴄᴛᴇʀs ❱═══╗
-║ ─ ᴀɴɪᴍᴇɢɪʀʟ
-║ ─ ᴀɴɪᴍᴇɢɪʀʟ1-5
-║ ─ ᴀɴɪᴍᴇ1-5
-║ ─ ғᴏxɢɪʀʟ
-║ ─ ɴᴀʀᴜᴛᴏ
-╚═══════════════════╝
-
-> ${config.DESCRIPTION || '🌟 ᴅᴀʀᴋᴢᴏɴᴇ-ᴍᴅ'}`,
-                image: true
-            },
-            '7': {
-                title: "🔄 ᴄᴏɴᴠᴇʀᴛ ᴍᴇɴᴜ",
-                content: `╔══════════════════╗
-║  ${botName}
-║  🔄 ᴄᴏɴᴠᴇʀᴛ ᴍᴇɴᴜ
-╚══════════════════╝
-
-╔════❰  📊 sᴛᴀᴛᴜs ❱═════╗
-║ 👑 ᴏᴡɴᴇʀ: ${ownerName}
-║ 🔄 ᴄᴏᴍᴍᴀɴᴅs: 19
-║ ⏱️ ᴜᴘᴛɪᴍᴇ: ${uptime}
-╚══════════════════╝
-
-╔══════❰ 🖼️ ᴍᴇᴅɪᴀ ❱═════╗
-║ ─ sᴛɪᴄᴋᴇʀ [ɪᴍɢ]
-║ ─ sᴛɪᴄᴋᴇʀ2 [ɪᴍɢ]
-║ ─ ᴇᴍᴏᴊɪᴍɪx 😎+😂
-║ ─ ᴛᴀᴋᴇ [ɴᴀᴍᴇ,ᴛᴇxᴛ]
-║ ─ ᴛᴏᴍᴘ3 [ᴠɪᴅᴇᴏ]
-╚══════════════════╝
-
-╔═════❰ 🔤 ᴛᴇxᴛ ᴛᴏᴏʟs ❱══╗
-║ ─ ғᴀɴᴄʏ [ᴛᴇxᴛ]
-║ ─ ᴛᴛs [ᴛᴇxᴛ]
-║ ─ ᴛʀᴛ [ᴛᴇxᴛ]
-║ ─ ʙᴀsᴇ64 [ᴛᴇxᴛ]
-║ ─ ᴜɴʙᴀsᴇ64 [ᴛᴇxᴛ]
-╚══════════════════╝
-
-> ${config.DESCRIPTION || '🌟 ᴅᴀʀᴋᴢᴏɴᴇ-ᴍᴅ'}`,
-                image: true
-            },
-            '8': {
-                title: "📌 ᴏᴛʜᴇʀ ᴍᴇɴᴜ",
-                content: `╔══════════════════╗
-║  ${botName}
-║  📌 ᴏᴛʜᴇʀ ᴍᴇɴᴜ
-╚══════════════════╝
-
-╔═════❰  📊 sᴛᴀᴛᴜs ❱════╗
-║ 👑 ᴏᴡɴᴇʀ: ${ownerName}
-║ 📌 ᴄᴏᴍᴍᴀɴᴅs: 15
-║ ⏱️ ᴜᴘᴛɪᴍᴇ: ${uptime}
-╚══════════════════╝
-
-╔════❰ 🕒 ᴜᴛɪʟɪᴛɪᴇs ❱═════╗
-║ ─ ᴛɪᴍᴇɴᴏᴡ
-║ ─ ᴅᴀᴛᴇ
-║ ─ ᴄᴏᴜɴᴛ [ɴᴜᴍ]
-║ ─ ᴄᴀʟᴄᴜʟᴀᴛᴇ [ᴇxᴘʀ]
-║ ─ ᴄᴏᴜɴᴛx
-╚══════════════════╝
-
-╔════❰  🎲 ʀᴀɴᴅᴏᴍ ❱═════╗
-║ ─ ғʟɪᴘ
-║ ─ ᴄᴏɪɴғʟɪᴘ
-║ ─ ʀᴄᴏʟᴏʀ
-║ ─ ʀᴏʟʟ
-║ ─ ғᴀᴄᴛ
-║ ─ ᶠᵒʳʷᵃʳᵈ
-║ ─ ᶠᵒʳʷᵃʳᵈᵃˡˡ
-║ ─ ᶠᵒʳʷᵃʳᵈᵍʳᵒᵘᵖ
-║ ─ sᴀᴠᴇ
-╚══════════════════╝
-
-╔═════❰  🔍 sᴇᴀʀᴄʜ ❱════╗
-║ ─ ᴅᴇғɪɴᴇ [ᴡᴏʀᴅ]
-║ ─ ɴᴇᴡs [ǫᴜᴇʀʏ]
-║ ─ ᴍᴏᴠɪᴇ [ɴᴀᴍᴇ]
-║ ─ ᴡᴇᴀᴛʜᴇʀ [ʟᴏᴄ]
-╚══════════════════╝
-
-> ${config.DESCRIPTION || '🌟 ᴅᴀʀᴋᴢᴏɴᴇ-ᴍᴅ'}`,
-                image: true
-            },
-            '9': {
-                title: "💞 ʀᴇᴀᴄᴛɪᴏɴs ᴍᴇɴᴜ",
-                content: `╔══════════════════╗
-║  ${botName}
-║  💞 ʀᴇᴀᴄᴛɪᴏɴs ᴍᴇɴᴜ
-╚══════════════════╝
-
-╔═════❰  📊 sᴛᴀᴛᴜs ❱════╗
-║ 👑 ᴏᴡɴᴇʀ: ${ownerName}
-║ 💞 ᴄᴏᴍᴍᴀɴᴅs: 26
-║ ⏱️ ᴜᴘᴛɪᴍᴇ: ${uptime}
-╚══════════════════╝
-
-╔════❰ 💗 ᴀғғᴇᴄᴛɪᴏɴ ❱════╗
-║ ─ ᴄᴜᴅᴅʟᴇ @ᴜsᴇʀ
-║ ─ ʜᴜɢ @ᴜsᴇʀ
-║ ─ ᴋɪss @ᴜsᴇʀ
-║ ─ ʟɪᴄᴋ @ᴜsᴇʀ
-║ ─ ᴘᴀᴛ @ᴜsᴇʀ
-╚══════════════════╝
-
-╔═════❰ 😄  ғᴜɴɴʏ ❱═════╗
-║ ─ ʙᴜʟʟʏ @ᴜsᴇʀ
-║ ─ ʙᴏɴᴋ @ᴜsᴇʀ
-║ ─ ʏᴇᴇᴛ @ᴜsᴇʀ
-║ ─ sʟᴀᴘ @ᴜsᴇʀ
-║ ─ ᴋɪʟʟ @ᴜsᴇʀ
-╚══════════════════╝
-
-╔══❰ 😊 ᴇxᴘʀᴇssɪᴏɴs ❱════╗
-║ ─ ʙʟᴜsʜ @ᴜsᴇʀ
-║ ─ sᴍɪʟᴇ @ᴜsᴇʀ
-║ ─ ʜᴀᴘᴘʏ @ᴜsᴇʀ
-║ ─ ᴡɪɴᴋ @ᴜsᴇʀ
-║ ─ ᴘᴏᴋᴇ @ᴜsᴇʀ
-╚══════════════════╝
-
-> ${config.DESCRIPTION || '🌟 ᴅᴀʀᴋᴢᴏɴᴇ-ᴍᴅ'}`,
-                image: true
-            },
-            '10': {
-                title: "🏠 ᴍᴀɪɴ ᴍᴇɴᴜ",
-                content: `╔══════════════════╗
-║  ${botName}
-║  🏠 ᴍᴀɪɴ ᴍᴇɴᴜ
-╚══════════════════╝
-
-╔══════❰ 📊 sᴛᴀᴛᴜs ❱════╗
-║ 👑 ᴏᴡɴᴇʀ: ${ownerName}
-║ 🏠 ᴄᴏᴍᴍᴀɴᴅs: 10
-║ ⏱️ ᴜᴘᴛɪᴍᴇ: ${uptime}
-╚══════════════════╝
-
-╔════❰ 🤖 ʙᴏᴛ ɪɴғᴏ ❱════╗
-║ ─ ᴘɪɴɢ
-║ ─ ʟɪᴠᴇ
-║ ─ ᴀʟɪᴠᴇ
-║ ─ ʀᴜɴᴛɪᴍᴇ
-║ ─ ᴜᴘᴛɪᴍᴇ
-║ ─ ʀᴇᴘᴏ
-║ ─ ᴏᴡɴᴇʀ
-║ ─ ʙɪᴏ
-╚══════════════════╝
-
-╔════❰ ⚙️ ᴄᴏɴᴛʀᴏʟs ❱════╗
-║ ─ ᴍᴇɴᴜ
-║ ─ ᴍᴇɴᴜ2
-║ ─ ʀᴇsᴛᴀʀᴛ
-╚══════════════════╝
-
-> ${config.DESCRIPTION || '🌟 ᴅᴀʀᴋᴢᴏɴᴇ-ᴍᴅ'}`,
-                image: true
-            }
-        };
-
-        // Message handler
+        // ── Reply handler: user replies with section number ──
         const handler = async (msgData) => {
             try {
                 const receivedMsg = msgData.messages[0];
                 if (!receivedMsg?.message || !receivedMsg.key?.remoteJid) return;
 
                 const isReplyToMenu = receivedMsg.message.extendedTextMessage?.contextInfo?.stanzaId === messageID;
-                
-                if (isReplyToMenu) {
-                    const receivedText = receivedMsg.message.conversation || 
-                                      receivedMsg.message.extendedTextMessage?.text;
-                    const senderID = receivedMsg.key.remoteJid;
+                if (!isReplyToMenu) return;
 
-                    if (menuData[receivedText]) {
-                        const selectedMenu = menuData[receivedText];
-                        
-                        try {
+                const receivedText = (
+                    receivedMsg.message.conversation ||
+                    receivedMsg.message.extendedTextMessage?.text || ''
+                ).trim();
+
+                const senderID = receivedMsg.key.remoteJid;
+
+                // Map number → section key
+                const numToSection = {};
+                orderedSections.forEach((k, i) => { numToSection[String(i + 1)] = k; });
+
+                const sectionKey = numToSection[receivedText];
+
+                if (sectionKey && sections[sectionKey]) {
+                    const subText = buildSubMenu(
+                        sectionKey, sections[sectionKey], botName, ownerName, runtime(process.uptime())
+                    );
+
+                    try {
+                        if (videoUrl) {
                             await conn.sendMessage(senderID, {
-                                image: { url: config.MENU_IMAGE_URL || 'https://files.catbox.moe/8cb9h0.jpg' },
-                                caption: selectedMenu.content,
+                                video: { url: videoUrl },
+                                caption: subText,
+                                gifPlayback: false,
                                 contextInfo: contextInfo
                             }, { quoted: receivedMsg });
-
+                        } else {
                             await conn.sendMessage(senderID, {
-                                react: { text: '✅', key: receivedMsg.key }
-                            });
-
-                        } catch (e) {
-                            await conn.sendMessage(senderID, {
-                                text: selectedMenu.content,
+                                image: { url: imageUrl },
+                                caption: subText,
                                 contextInfo: contextInfo
                             }, { quoted: receivedMsg });
                         }
-
-                    } else {
+                    } catch {
                         await conn.sendMessage(senderID, {
-                            text: `❌ ɪɴᴠᴀʟɪᴅ ᴏᴘᴛɪᴏɴ!\n\nᴘʟᴇᴀsᴇ ʀᴇᴘʟʏ ᴡɪᴛʜ ᴀ ɴᴜᴍʙᴇʀ ʙᴇᴛᴡᴇᴇɴ 1-10\n\n> ${config.DESCRIPTION || 'ᴅᴀʀᴋᴢᴏɴᴇ-ᴍᴅ'}`,
+                            text: subText,
                             contextInfo: contextInfo
                         }, { quoted: receivedMsg });
                     }
+
+                    await conn.sendMessage(senderID, {
+                        react: { text: '✅', key: receivedMsg.key }
+                    });
+                } else {
+                    await conn.sendMessage(senderID, {
+                        text: `❌ ɪɴᴠᴀʟɪᴅ ᴏᴘᴛɪᴏɴ!\n\nᴘʟᴇᴀsᴇ ʀᴇᴘʟʏ ᴡɪᴛʜ ᴀ ɴᴜᴍʙᴇʀ ʙᴇᴛᴡᴇᴇɴ 1 - ${orderedSections.length}\n\n> ${config.DESCRIPTION || botName}`,
+                        contextInfo: contextInfo
+                    }, { quoted: receivedMsg });
                 }
             } catch (e) {
-                console.log('Handler error:', e);
+                console.log('[automenu] handler error:', e.message);
             }
         };
 
-        conn.ev.on("messages.upsert", handler);
-        setTimeout(() => {
-            conn.ev.off("messages.upsert", handler);
-        }, 300000);
+        conn.ev.on('messages.upsert', handler);
+        // Auto-cleanup after 5 minutes
+        setTimeout(() => conn.ev.off('messages.upsert', handler), 300000);
 
     } catch (e) {
-        console.error('Menu Error:', e);
-        reply(`❌ ᴍᴇɴᴜ ᴇʀʀᴏʀ. ᴘʟᴇᴀsᴇ ᴛʀʏ ᴀɢᴀɪɴ.`);
+        console.error('[automenu] Error:', e);
+        reply('❌ ᴀᴜᴛᴏ ᴍᴇɴᴜ ᴇʀʀᴏʀ. ᴘʟᴇᴀsᴇ ᴛʀʏ ᴀɢᴀɪɴ.');
     }
 });
+
+// ══════════════════════════════════════════
+//   BONUS COMMAND: .setmenuvideo <url>
+//   Lets owner set video URL at runtime
+// ══════════════════════════════════════════
+cmd({
+    pattern: "setmenuvideo",
+    alias: ["vidmenu"],
+    use: '.setmenuvideo <video_url>',
+    desc: "Set menu thumbnail to a video URL (owner only)",
+    category: "owner",
+    react: "🎥",
+    filename: __filename
+}, async (conn, mek, m, { from, args, isOwner, reply }) => {
+    if (!isOwner) return reply("❌ Owner only command!");
+    const url = args[0];
+    if (!url) return reply("❌ Usage: .setmenuvideo <direct_video_url>");
+    config.MENU_VIDEO_URL = url;
+    reply(`✅ *Menu video set!*\n\n🎥 URL: ${url}\n\n> Use .automenu to see it in action!`);
+});
+
+// ══════════════════════════════════════════
+//   BONUS COMMAND: .setmenuimage <url>
+//   Lets owner set image URL at runtime
+// ══════════════════════════════════════════
