@@ -1,5 +1,5 @@
 const { cmd } = require('../command');
-const axios = require('axios');
+const fetch = require('node-fetch');
 
 cmd({
     pattern: "music",
@@ -14,48 +14,44 @@ cmd({
 
         await reply("🔍 Searching...");
 
-        // Use new Faa API with proper config
         const api = `https://api-faa.my.id/faa/ytplay?q=${encodeURIComponent(q)}`;
         
-        const res = await axios.get(api, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            },
-            timeout: 30000
-        });
+        const res = await fetch(api);
+        const json = await res.json();
 
-        const json = res.data;
-
-        // Debug log
-        console.log("API Response:", JSON.stringify(json, null, 2));
+        console.log("API Response:", json);
 
         if (!json.status || !json.result || !json.result.mp3) {
-            return await reply("❌ No results found or download failed!");
+            return await reply("❌ No results found!");
         }
 
-        const result = json.result;
-        const title = result.title || "Unknown Song";
-        const thumbnail = result.thumbnail || "";
-        const audioUrl = result.mp3;
-        const duration = result.duration ? `${Math.floor(result.duration / 60)}:${(result.duration % 60).toString().padStart(2, '0')}` : "Unknown";
-        const views = result.views ? result.views.toLocaleString() : "Unknown";
-        const author = result.author || "Unknown";
-        const published = result.published || "Unknown";
+        const { title, mp3, thumbnail, duration, views, author, published } = json.result;
 
-        // 🎵 Send video thumbnail + info first
-        try {
+        const dur = duration ? `${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, '0')}` : "N/A";
+
+        const caption = `🎧 *AUDIO DOWNLOADER*
+╭━━━━━━━━━━━━━━╮
+┃ 🎵 *Title:* ${title}
+┃ 👤 *Author:* ${author}
+┃ ⏱️ *Duration:* ${dur}
+┃ 👁️ *Views:* ${views?.toLocaleString()}
+┃ 📅 *Published:* ${published}
+╰━━━━━━━━━━━━━━╯
+> *DARKZONE-MD*`;
+
+        // Send thumbnail
+        if (thumbnail) {
             await conn.sendMessage(from, {
                 image: { url: thumbnail },
-                caption: `🎧 *AUDIO DOWNLOADER*\n╭━━━━━━━━━━━━━━╮\n┃ 🎵 *Title:* ${title}\n┃ 👤 *Author:* ${author}\n┃ ⏱️ *Duration:* ${duration}\n┃ 👁️ *Views:* ${views}\n┃ 📅 *Published:* ${published}\n┃ 📥 *Status:* Downloading...\n╰━━━━━━━━━━━━━━╯\n> *DARKZONE-MD*`
+                caption: caption
             }, { quoted: mek });
-        } catch (thumbError) {
-            console.log("Thumbnail error, sending without image:", thumbError.message);
-            await reply(`🎧 *AUDIO DOWNLOADER*\n╭━━━━━━━━━━━━━━╮\n┃ 🎵 *Title:* ${title}\n┃ 👤 *Author:* ${author}\n┃ ⏱️ *Duration:* ${duration}\n┃ 👁️ *Views:* ${views}\n┃ 📅 *Published:* ${published}\n┃ 📥 *Status:* Downloading...\n╰━━━━━━━━━━━━━━╯\n> *DARKZONE-MD*`);
+        } else {
+            await reply(caption);
         }
 
-        // 🎧 Send final audio file
+        // Send audio
         await conn.sendMessage(from, {
-            audio: { url: audioUrl },
+            audio: { url: mp3 },
             mimetype: "audio/mpeg",
             fileName: `${title}.mp3`
         }, { quoted: mek });
@@ -63,9 +59,7 @@ cmd({
         await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
 
     } catch (e) {
-        console.error("Full Error Details:", e.message);
-        console.error("Error Stack:", e.stack);
+        console.error("Error:", e);
         await reply("❌ Error: " + e.message);
-        await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
     }
 });
