@@ -56,7 +56,7 @@ cmd({
 ┃   • Different keywords
 ┃   • Artist name + song title
 ╰━━━━━━━━━━━━━━━━━━⬣
-> 🎵 DmlSearch Engine`);
+> 🎵 Search Engine`);
             }
 
             const video = search.videos[0];
