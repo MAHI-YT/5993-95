@@ -1,57 +1,164 @@
 const { cmd } = require('../command');
 const axios = require('axios');
+const yts = require('yt-search');
 
 cmd({
     pattern: "music",
     alias: ["play", "song", "audio", "roohi", "ayezal"],
-    desc: "Download YouTube audio with thumbnail",
+    desc: "Searches a song on YouTube and downloads it as MP3",
     category: "download",
-    react: "🎶",
+    react: "🎵",
     filename: __filename
 }, async (conn, mek, m, { from, q, reply }) => {
     try {
-        if (!q) return await reply("🎧 Please provide a song name!\n\nExample: .play Faded Alan Walker");
+        const query = q ? q.trim() : '';
 
-        // Faa API
-        const api = `https://api-faa.my.id/faa/ytplay?q=${encodeURIComponent(q)}`;
-        const res = await axios.get(api);
-        const json = res.data;
-
-        if (!json.status || !json.result || !json.result.mp3) {
-            return await reply("❌ No results found or download failed!");
+        if (!query) {
+            return await reply(`╭━〔 🎵 DML MUSIC ENGINE 〕━⬣
+┃ ⚠️ No input detected.
+┃
+┃ ➤ Send a song name or YouTube link.
+┃
+┃ ✦ Example:
+┃   .play komasava
+┃   .play https://youtu.be/dQw4w9WgXcQ
+╰━━━━━━━━━━━━━━━━━━⬣
+> 🚀 Powered by Dml Tech`);
         }
 
-        const result = json.result;
-        const title = result.title || "Unknown Song";
-        const thumbnail = result.thumbnail;
-        const audioUrl = result.mp3;
-        const author = result.author || "Unknown";
-        const duration = result.duration || 0;
-        const views = result.views || 0;
+        await conn.sendMessage(from, {
+            react: { text: '⌛', key: m.key }
+        });
 
-        // Format duration
-        const mins = Math.floor(duration / 60);
-        const secs = duration % 60;
-        const durationText = `${mins}:${secs.toString().padStart(2, '0')}`;
+        const isYoutubeLink =
+            /(?:https?:\/\/)?(?:youtu\.be\/|(?:www\.|m\.)?youtube\.com\/(?:watch\?v=|v\/|embed\/|shorts\/)?)([a-zA-Z0-9_-]{11})/i.test(query);
 
-        // 🎵 Send thumbnail + info
+        let videoUrl = query;
+        let title = 'Unknown YouTube Song';
+        let thumbnail = '';
+        let duration = '';
+        let author = 'Unknown';
+        let views = 0;
+
+        if (!isYoutubeLink) {
+            const search = await yts(query);
+
+            if (!search?.videos?.length) {
+                await conn.sendMessage(from, {
+                    react: { text: '❌', key: m.key }
+                });
+
+                return await reply(`╭━〔 🔎 NO RESULTS FOUND 〕━⬣
+┃ No matching results for:
+┃ ➤ "${query}"
+┃
+┃ Try:
+┃   • Different keywords
+┃   • Artist name + song title
+╰━━━━━━━━━━━━━━━━━━⬣
+> 🎵 DmlSearch Engine`);
+            }
+
+            const video = search.videos[0];
+            videoUrl = video.url;
+            title = video.title || title;
+            thumbnail = video.thumbnail || '';
+            duration = video.timestamp || '';
+            author = video.author?.name || 'Unknown';
+            views = video.views || 0;
+        } else {
+            const videoId = query.match(/([a-zA-Z0-9_-]{11})/i)?.[1];
+            const search = await yts({ videoId: videoId });
+
+            if (search) {
+                title = search.title || title;
+                thumbnail = search.thumbnail || '';
+                duration = search.timestamp || '';
+                videoUrl = search.url || query;
+                author = search.author?.name || 'Unknown';
+                views = search.views || 0;
+            }
+        }
+
+        const apiUrl = `https://api.giftedtech.co.ke/api/download/ytmp3v2?apikey=gifted&url=${encodeURIComponent(videoUrl)}&quality=128`;
+
+        const response = await axios.get(apiUrl);
+        const data = response.data;
+
+        const result = data.result || data.results || data;
+
+        const audioUrl =
+            result.download_url ||
+            result.downloadUrl ||
+            result.url ||
+            result.audio ||
+            result.link;
+
+        // Update title and thumbnail from API if available
+        title = result.title || result.name || title || 'Unknown YouTube Song';
+        thumbnail = result.thumbnail || result.image || thumbnail || '';
+
+        if (!audioUrl) {
+            await conn.sendMessage(from, {
+                react: { text: '❌', key: m.key }
+            });
+
+            return await reply(`╭━〔 ❌ DOWNLOAD FAILED 〕━⬣
+┃ Unable to process your request.
+┃
+┃ ➤ Possible Reasons:
+┃   • Song not found
+┃   • Video unavailable
+┃   • API returned no audio URL
+┃
+┃ Please try again.
+╰━━━━━━━━━━━━━━━━━━⬣
+> 🎵 DmlDownloader`);
+        }
+
+        const safeTitle = title.replace(/[<>:"/\\|?*]/g, '_').trim();
+
+        // ✅ First: Send Thumbnail Image with Song Info
         await conn.sendMessage(from, {
             image: { url: thumbnail },
-            caption: `🎧 *AUDIO DOWNLOADER*\n╭━━❐━⪼\n┇๏ *Title* - ${title}\n┇๏ *Author* - ${author}\n┇๏ *Duration* - ${durationText}\n┇๏ *Views* - ${views.toLocaleString()}\n┇๏ *Status* - Downloading...\n╰━━❑━⪼\n> *DARKZONE-MD*`
+            caption: `🎧 *DML AUDIO DOWNLOADER*
+╭━━━━━━━━━━━━━━━⬣
+┃ 🎵 *Title:* ${safeTitle}
+┃ 👤 *Author:* ${author}
+┃ ⏱️ *Duration:* ${duration}
+┃ 👁️ *Views:* ${views.toLocaleString()}
+┃ 📥 *Status:* Downloading...
+╰━━━━━━━━━━━━━━━⬣
+> ⚡ *Powered by DML-MD*`
         }, { quoted: mek });
 
-        // 🎧 Send audio
+        // ✅ Second: Send Audio File
         await conn.sendMessage(from, {
             audio: { url: audioUrl },
-            mimetype: "audio/mpeg",
-            fileName: `${title}.mp3`
+            mimetype: 'audio/mpeg',
+            fileName: `${safeTitle}.mp3`
         }, { quoted: mek });
 
-        await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
+        // ✅ Success Reaction
+        await conn.sendMessage(from, {
+            react: { text: '✅', key: m.key }
+        });
 
-    } catch (e) {
-        console.error("Error in .play command:", e);
-        await reply("❌ Error occurred, please try again later!");
-        await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
+    } catch (error) {
+        console.error('Play error:', error);
+
+        await conn.sendMessage(from, {
+            react: { text: '❌', key: m.key }
+        });
+
+        await reply(`╭━〔 🚨 PLAY ERROR 〕━⬣
+┃ Something went wrong while processing.
+┃
+┃ Error:
+┃ ${error.message}
+┃
+┃ Please try again later.
+╰━━━━━━━━━━━━━━━━━━⬣
+> 🛠️ DML-MD System`);
     }
 });
