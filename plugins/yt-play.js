@@ -129,7 +129,7 @@ cmd({
 ┃ 👁️ *Views:* ${views.toLocaleString()}
 ┃ 📥 *Status:* Downloading...
 ╰━━━━━━━━━━━━━━━⬣
-> ⚡ *Powered by DARKZONE-MD*`
+> ⚡ *DARKZONE-MD*`
         }, { quoted: mek });
 
         // ✅ Second: Send Audio File
