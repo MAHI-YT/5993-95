@@ -312,17 +312,42 @@ const {
         if(mek.message.viewOnceMessageV2)
         mek.message = (getContentType(mek.message) === 'ephemeralMessage') ? mek.message.ephemeralMessage.message : mek.message
         
-        // ============ STATUS AUTO SEEN & REPLY ============
-if (mek.key && mek.key.remoteJid === 'status@broadcast' && config.AUTO_STATUS_SEEN === "true"){
-  await conn.readMessages([mek.key])
+// ============ STATUS AUTO SEEN & REPLY (FIXED VERSION) ============
+if (mek.key && mek.key.remoteJid === 'status@broadcast') {
+    const statusSender = mek.key.participant;
+    
+    if (statusSender && config.AUTO_STATUS_SEEN === "true") {
+        try {
+            // Method that works with latest Baileys
+            await conn.sendPresenceUpdate('available', statusSender);
+            
+            const key = {
+                remoteJid: 'status@broadcast',
+                id: mek.key.id,
+                participant: statusSender
+            };
+            
+            // Try primary method
+            await conn.readMessages([key]);
+            console.log(`[👁️] Status viewed: ${statusSender.split('@')[0]}`);
+            
+        } catch (error) {
+            console.log(`[⚠️] Status view error: ${error.message}`);
+        }
+    }
+    
+    // Auto Reply to Status
+    if (statusSender && config.AUTO_STATUS_REPLY === "true") {
+        try {
+            await sleep(1500);
+            const replyText = config.AUTO_STATUS_MSG || '🔥 Nice Status!';
+            await conn.sendMessage(statusSender, { text: replyText }, { quoted: mek });
+            console.log(`[💬] Replied to status: ${statusSender.split('@')[0]}`);
+        } catch (error) {
+            console.log(`[⚠️] Status reply error: ${error.message}`);
+        }
+    }
 }
-
-if (mek.key && mek.key.remoteJid === 'status@broadcast' && config.AUTO_STATUS_REPLY === "true"){
-  const user = mek.key.participant
-  const text = `${config.AUTO_STATUS_MSG}`
-  await conn.sendMessage(user, { text: text, react: { text: '💜', key: mek.key } }, { quoted: mek })
-}
-
         // ============ CHANNEL AUTO REACT (ONLY FOR SPECIFIED CHANNELS) ============
         if (mek.key && mek.key.remoteJid && mek.key.remoteJid.endsWith('@newsletter')) {
             // Check if this channel is in our react list
