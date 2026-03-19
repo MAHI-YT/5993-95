@@ -91,7 +91,7 @@ cmd({
         // Show available categories if no input
         if (!q) {
             let categoryList = Object.keys(categories).map((cat, index) => `${index + 1}. *${cat.toUpperCase()}*`).join('\n');
-            return await reply(`📱 *WHATSAPP STATUS DOWNLOADER*\n━━━━━━━━━━━━━━━━━━━━━\n\n📂 *Available Categories:*\n\n${categoryList}\n\n━━━━━━━━━━━━━━━━━━━━━\n📝 *Usage:* .status <category>\n📌 *Example:* .status islam\n📌 *Example:* .status motivation\n\n> *DARKZONE-MD*`);
+            return await reply(`📱 *WHATSAPP STATUS DOWNLOADER*\n━━━━━━━━━━━━━━━━━━━━━\n\n📂 *Available Categories:*\n\n${categoryList}\n\n━━━━━━━━━━━━━━━━━━━━━\n📝 *Usage:* .wastatus <category>\n📌 *Example:* .wastatus islam\n📌 *Example:* .wastatus motivation\n\n> *DARKZONE-MD*`);
         }
 
         const category = q.toLowerCase().trim();
@@ -99,7 +99,7 @@ cmd({
         // Check if category exists
         if (!categories[category]) {
             let categoryList = Object.keys(categories).map((cat, index) => `${index + 1}. *${cat.toUpperCase()}*`).join('\n');
-            return await reply(`❌ *Invalid Category!*\n\n📂 *Available Categories:*\n\n${categoryList}\n\n📌 *Example:* .status sad`);
+            return await reply(`❌ *Invalid Category!*\n\n📂 *Available Categories:*\n\n${categoryList}\n\n📌 *Example:* .wastatus sad`);
         }
 
         // React to show processing
@@ -155,31 +155,31 @@ cmd({
         // React to show downloading
         await conn.sendMessage(from, { react: { text: '⬇️', key: m.key } });
 
-        // Call JawadTech API for download
-        const api = `https://jawad-tech.vercel.app/download/ytdl?url=${encodeURIComponent(videoInfo.url)}`;
+        // Call GiftedTech API for download
+        const api = `https://api.giftedtech.co.ke/api/download/dlmp4?apikey=gifted&url=${encodeURIComponent(videoInfo.url)}`;
         const res = await axios.get(api);
         const data = res.data;
 
         // Check API response
-        if (!data?.status || !data?.result?.mp4) {
+        if (!data?.success || !data?.result?.download_url) {
             return await reply("❌ Failed to fetch download link from API!");
         }
 
-        const { mp4 } = data.result;
+        const { download_url, title, quality } = data.result;
 
         // Send the video
         await conn.sendMessage(from, {
-            video: { url: mp4 },
+            video: { url: download_url },
             mimetype: 'video/mp4',
             fileName: `${category}_status.mp4`,
-            caption: `${emoji} *${category.toUpperCase()} STATUS*\n━━━━━━━━━━━━━━━━━━━━━\n\n🎬 *${videoInfo.title}*\n\n✅ *Download Complete!*\n\n> *DARKZONE-MD*`
+            caption: `${emoji} *${category.toUpperCase()} STATUS*\n━━━━━━━━━━━━━━━━━━━━━\n\n🎬 *${title || videoInfo.title}*\n📊 *Quality:* ${quality || '480p'}\n\n✅ *Download Complete!*\n\n> *DARKZONE-MD*`
         }, { quoted: mek });
 
         // Success reaction
         await conn.sendMessage(from, { react: { text: '✅', key: m.key } });
 
     } catch (err) {
-        console.error("❌ Error in .status command:", err);
+        console.error("❌ Error in .wastatus command:", err);
         await reply("⚠️ Something went wrong while downloading the status video!");
         await conn.sendMessage(from, { react: { text: '❌', key: m.key } });
     }
