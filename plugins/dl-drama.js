@@ -20,6 +20,12 @@ cmd({
 \`.drama Kaisi Teri Khudgarzi Episode 1\`
         `);
 
+        // Function to extract video ID
+        function getVideoId(url) {
+            const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
+            return match ? match[1] : null;
+        }
+
         let url = q;
         let videoInfo = null;
 
@@ -31,17 +37,13 @@ cmd({
             if (!videoId) return await reply("❌ Invalid YouTube URL!");
             const searchFromUrl = await yts({ videoId: videoId });
             videoInfo = searchFromUrl;
+            url = `https://www.youtube.com/watch?v=${videoId}`;
         } else {
             const search = await yts(q + " drama full episode");
             if (!search.videos || search.videos.length === 0)
                 return await reply("😢 No drama found with that name!");
             videoInfo = search.videos[0];
             url = videoInfo.url;
-        }
-
-        function getVideoId(url) {
-            const match = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
-            return match ? match[1] : null;
         }
 
         // Send fancy preview
@@ -61,23 +63,24 @@ cmd({
             `
         }, { quoted: mek });
 
-        // Download via existing API
-        const api = `https://jawad-tech.vercel.app/download/ytdl?url=${encodeURIComponent(url)}`;
+        // Download via GiftedTech API
+        const api = `https://api.giftedtech.co.ke/api/download/dlmp4?apikey=gifted&url=${encodeURIComponent(url)}`;
         const res = await axios.get(api);
         const data = res.data;
 
-        if (!data?.status || !data?.result?.mp4)
+        if (!data?.success || !data?.result?.download_url)
             return await reply("⚠️ Could not get the drama file, please try again later!");
 
-        const { title, mp4 } = data.result;
+        const { title, download_url, quality } = data.result;
 
         // Send as a document for faster speed
         await conn.sendMessage(from, {
-            document: { url: mp4 },
+            document: { url: download_url },
             mimetype: 'video/mp4',
-            fileName: `${title}.mp4`,
+            fileName: `${title || videoInfo.title}.mp4`,
             caption: `
-✨ *${title}*  
+✨ *${title || videoInfo.title}*  
+📊 *Quality:* ${quality || '480p'}
 🎬 Your requested drama is ready!
 
 🖤 *Enjoy Watching With*  
