@@ -5,7 +5,7 @@ const axios = require('axios');
 cmd({
     pattern: "video",
     alias: ["ytvideo", "ytmp4", "ytv"],
-    desc: "Download YouTube video using JawadTech API",
+    desc: "Download YouTube video using GiftedTech API",
     category: "download",
     react: "🎬",
     filename: __filename
@@ -89,24 +89,24 @@ cmd({
             caption: `🎬 *${videoInfo.title}*\n⏰ *Duration:* ${videoInfo.timestamp}\n👁️ *Views:* ${videoInfo.views}\n\n⏳ *Downloading, please wait...*`
         }, { quoted: mek });
 
-        // Call JawadTech API
-        const api = `https://jawad-tech.vercel.app/download/ytdl?url=${encodeURIComponent(url)}`;
+        // Call GiftedTech API
+        const api = `https://api.giftedtech.co.ke/api/download/dlmp4?apikey=gifted&url=${encodeURIComponent(url)}`;
         const res = await axios.get(api);
         const data = res.data;
 
         // Check API response
-        if (!data?.status || !data?.result?.mp4) {
+        if (!data?.success || !data?.result?.download_url) {
             return await reply("❌ Failed to fetch download link from API!");
         }
 
-        const { title, mp4 } = data.result;
+        const { title, download_url, quality } = data.result;
 
         // Send the video
         await conn.sendMessage(from, {
-            video: { url: mp4 },
+            video: { url: download_url },
             mimetype: 'video/mp4',
-            fileName: `${title}.mp4`,
-            caption: `🎬 *${title}*\n> ✅ Download completed successfully!\n\n> *DARKZONE-MD*`
+            fileName: `${title || videoInfo.title}.mp4`,
+            caption: `🎬 *${title || videoInfo.title}*\n📊 *Quality:* ${quality || '480p'}\n> ✅ Download completed successfully!\n\n> *DARKZONE-MD*`
         }, { quoted: mek });
 
         // Success reaction
