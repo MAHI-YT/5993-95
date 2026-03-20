@@ -1,158 +1,193 @@
-const { cmd } = require('../command');
-const axios = require('axios');
-const yts = require('yt-search');
+const { cmd } = require('../command')
+const axios = require('axios')
+const yts = require('yt-search')
+const fs = require('fs')
+const path = require('path')
+const ffmpeg = require('fluent-ffmpeg')
+const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path
+
+ffmpeg.setFfmpegPath(ffmpegPath)
 
 cmd({
-    pattern: "music",
-    alias: ["play", "song", "audio", "roohi", "ayezal"],
-    desc: "Searches a song on YouTube and downloads it as MP3",
+    pattern: "song",
+    alias: ["play", "music", "audio"],
+    desc: "Download YouTube song with multiple API fallback",
     category: "download",
-    react: "🎵",
+    react: "🎧",
     filename: __filename
-}, async (conn, mek, m, { from, q, reply }) => {
+}, async (conn, mek, m, { from, reply, text }) => {
     try {
-        const query = q ? q.trim() : '';
-
-        if (!query) {
-            return await reply(`╭━〔 🎵MUSIC ENGINE 〕━⬣
-┃ ⚠️ .play pal pal 
-╰━━━━━━━━━━━━━━━━━━⬣
-> 🚀 DARKZONE-MD`);
+        if (!text) {
+            return reply("❌ Song name likho\nExample:\n.song la la la")
         }
+
+        // 🔍 YouTube search
+        const search = await yts(text)
+        if (!search.videos || !search.videos.length) {
+            return reply("❌ Song nahi mila")
+        }
+
+        const vid = search.videos[0]
+
+        // 🎨 DARKZONE-MD STYLE BOX
+        const caption = `
+*╭ׂ┄─̇─̣┄─̇─̣┄─̇─̣┄─̇─̣┄─̇─̣─̇─̣─᛭*
+*│ ╌─̇─̣⊰  DARKZONE-MD ⊱┈─̇─̣╌*
+*│─̇─̣┄┄┄┄┄┄┄┄┄┄┄┄┄─̇─̣*
+*│❀ 🎵 𝐓𝐢𝐭𝐥𝐞:* ${vid.title}
+*│❀ 📀 𝐐𝐮𝐚𝐥𝐢𝐭𝐲:* 128kbps
+*│❀ 📁 𝐅𝐨𝐫𝐦𝐚𝐭:* mp3
+*│❀ ⚙️ 𝐒𝐭𝐚𝐭𝐮𝐬:* Downloading...
+*╰┄─̣┄─̇─̣┄─̇─̣┄─̇─̣┄─̇─̣─̇─̣─᛭*
+
+> ᴘᴏᴡᴇʀᴇᴅ ʙʏ DARKZONE-MD 🤍
+`
 
         await conn.sendMessage(from, {
-            react: { text: '⌛', key: m.key }
-        });
+            image: { url: vid.thumbnail },
+            caption
+        }, { quoted: mek })
 
-        const isYoutubeLink =
-            /(?:https?:\/\/)?(?:youtu\.be\/|(?:www\.|m\.)?youtube\.com\/(?:watch\?v=|v\/|embed\/|shorts\/)?)([a-zA-Z0-9_-]{11})/i.test(query);
+        let audioBuffer = null
+        let downloadSuccess = false
+        let usedAPI = ""
 
-        let videoUrl = query;
-        let title = 'Unknown YouTube Song';
-        let thumbnail = '';
-        let duration = '';
-        let author = 'Unknown';
-        let views = 0;
+        // ═══════════════════════════════════════════════════════════
+        // 🔷 API 1:  API (MP4 → FFmpeg → MP3)
+        // ═══════════════════════════════════════════════════════════
+        if (!downloadSuccess) {
+            try {
+                console.log("🔄 Trying API 1: Arslan API...")
+                const api1 = `https://arslan-apis.vercel.app/download/ytmp4?url=${encodeURIComponent(vid.url)}`
+                const res1 = await axios.get(api1, { timeout: 60000 })
 
-        if (!isYoutubeLink) {
-            const search = await yts(query);
+                if (res1.data?.status && res1.data?.result?.download?.url) {
+                    const videoUrl = res1.data.result.download.url
 
-            if (!search?.videos?.length) {
-                await conn.sendMessage(from, {
-                    react: { text: '❌', key: m.key }
-                });
+                    // 📂 Temp files
+                    const tempDir = path.join(__dirname, '../temp')
+                    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true })
 
-                return await reply(`╭━〔 🔎 NO RESULTS FOUND 〕━⬣
-┃ No matching results for:
-┃ ➤ "${query}"
-┃
-┃ Try:
-┃   • Different keywords
-┃   • Artist name + song title
-╰━━━━━━━━━━━━━━━━━━⬣
-> 🎵 Search Engine`);
-            }
+                    const videoPath = path.join(tempDir, `song_${Date.now()}.mp4`)
+                    const audioPath = path.join(tempDir, `song_${Date.now()}.mp3`)
 
-            const video = search.videos[0];
-            videoUrl = video.url;
-            title = video.title || title;
-            thumbnail = video.thumbnail || '';
-            duration = video.timestamp || '';
-            author = video.author?.name || 'Unknown';
-            views = video.views || 0;
-        } else {
-            const videoId = query.match(/([a-zA-Z0-9_-]{11})/i)?.[1];
-            const search = await yts({ videoId: videoId });
+                    // ⬇ Download video
+                    const stream = await axios({
+                        url: videoUrl,
+                        method: "GET",
+                        responseType: "stream",
+                        timeout: 120000
+                    })
 
-            if (search) {
-                title = search.title || title;
-                thumbnail = search.thumbnail || '';
-                duration = search.timestamp || '';
-                videoUrl = search.url || query;
-                author = search.author?.name || 'Unknown';
-                views = search.views || 0;
+                    await new Promise((resolve, reject) => {
+                        const w = fs.createWriteStream(videoPath)
+                        stream.data.pipe(w)
+                        w.on('finish', resolve)
+                        w.on('error', reject)
+                    })
+
+                    // 🎧 FFmpeg → MP3
+                    await new Promise((resolve, reject) => {
+                        ffmpeg(videoPath)
+                            .noVideo()
+                            .audioCodec('libmp3lame')
+                            .audioBitrate('128k')
+                            .format('mp3')
+                            .on('end', resolve)
+                            .on('error', reject)
+                            .save(audioPath)
+                    })
+
+                    audioBuffer = fs.readFileSync(audioPath)
+                    downloadSuccess = true
+                    usedAPI = "API 1 (Arslan)"
+
+                    // 🧹 Cleanup
+                    if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath)
+                    if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath)
+                    
+                    console.log("✅ API 1 Success!")
+                }
+            } catch (e) {
+                console.log("❌ API 1 Failed:", e.message)
             }
         }
 
-        const apiUrl = `https://api.giftedtech.co.ke/api/download/ytmp3v2?apikey=gifted&url=${encodeURIComponent(videoUrl)}&quality=128`;
+        // ═══════════════════════════════════════════════════════════
+        // 🔷 API 2: GiftedTech API (Direct MP3)
+        // ═══════════════════════════════════════════════════════════
+        if (!downloadSuccess) {
+            try {
+                console.log("🔄 Trying API 2: GiftedTech API...")
+                const api2 = `https://api.giftedtech.co.ke/api/download/ytmp3v2?apikey=gifted&url=${encodeURIComponent(vid.url)}&quality=128`
+                const res2 = await axios.get(api2, { timeout: 60000 })
 
-        const response = await axios.get(apiUrl);
-        const data = response.data;
+                const result = res2.data.result || res2.data.results || res2.data
+                const audioUrl = result.download_url || result.downloadUrl || result.url || result.audio || result.link
 
-        const result = data.result || data.results || data;
+                if (audioUrl) {
+                    const audioRes = await axios.get(audioUrl, { 
+                        responseType: 'arraybuffer', 
+                        timeout: 120000 
+                    })
+                    audioBuffer = Buffer.from(audioRes.data)
+                    downloadSuccess = true
+                    usedAPI = "API 2 (GiftedTech)"
+                    console.log("✅ API 2 Success!")
+                }
+            } catch (e) {
+                console.log("❌ API 2 Failed:", e.message)
+            }
+        }
 
-        const audioUrl =
-            result.download_url ||
-            result.downloadUrl ||
-            result.url ||
-            result.audio ||
-            result.link;
+        // ═══════════════════════════════════════════════════════════
+        // 🔷 API 3: Your Third API (Add here)
+        // ═══════════════════════════════════════════════════════════
+        if (!downloadSuccess) {
+            try {
+                console.log("🔄 Trying API 3: Third API...")
+                
+                // 🔸 Replace this URL with your third API
+                const api3 = `YOUR_THIRD_API_URL_HERE?url=${encodeURIComponent(vid.url)}`
+                const res3 = await axios.get(api3, { timeout: 60000 })
 
-        // Update title and thumbnail from API if available
-        title = result.title || result.name || title || 'Unknown YouTube Song';
-        thumbnail = result.thumbnail || result.image || thumbnail || '';
+                // 🔸 Adjust response handling based on your API response structure
+                const result = res3.data.result || res3.data
+                const audioUrl = result.download_url || result.url || result.audio || result.link
 
-        if (!audioUrl) {
+                if (audioUrl) {
+                    const audioRes = await axios.get(audioUrl, { 
+                        responseType: 'arraybuffer', 
+                        timeout: 120000 
+                    })
+                    audioBuffer = Buffer.from(audioRes.data)
+                    downloadSuccess = true
+                    usedAPI = "API 3"
+                    console.log("✅ API 3 Success!")
+                }
+            } catch (e) {
+                console.log("❌ API 3 Failed:", e.message)
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════
+        // 📤 Send Audio or Error Message
+        // ═══════════════════════════════════════════════════════════
+        if (downloadSuccess && audioBuffer) {
             await conn.sendMessage(from, {
-                react: { text: '❌', key: m.key }
-            });
+                audio: audioBuffer,
+                mimetype: "audio/mpeg",
+                fileName: `${vid.title}.mp3`,
+                ptt: false
+            }, { quoted: mek })
 
-            return await reply(`╭━〔 ❌ DOWNLOAD FAILED 〕━⬣
-┃ Unable to process your request.
-┃
-┃ ➤ Possible Reasons:
-┃   • Song not found
-┃   • Video unavailable
-┃   • API returned no audio URL
-┃
-┃ Please try again.
-╰━━━━━━━━━━━━━━━━━━⬣
-> 🎵 DmlDownloader`);
+            console.log(`✅ Song sent successfully using ${usedAPI}`)
+        } else {
+            return reply("❌ All APIs failed! Please try again later.\n\nplease try again later")
         }
 
-        const safeTitle = title.replace(/[<>:"/\\|?*]/g, '_').trim();
-
-        // ✅ First: Send Thumbnail Image with Song Info
-        await conn.sendMessage(from, {
-            image: { url: thumbnail },
-            caption: `🎧 *DARKZONE-MD AUDIO DOWNLOADER*
-╭━━━━━━━━━━━━━━━⬣
-┃ 🎵 *Title:* ${safeTitle}
-┃ 👤 *Author:* ${author}
-┃ ⏱️ *Duration:* ${duration}
-┃ 👁️ *Views:* ${views.toLocaleString()}
-┃ 📥 *Status:* Downloading...
-╰━━━━━━━━━━━━━━━⬣
-> ⚡ *DARKZONE-MD*`
-        }, { quoted: mek });
-
-        // ✅ Second: Send Audio File
-        await conn.sendMessage(from, {
-            audio: { url: audioUrl },
-            mimetype: 'audio/mpeg',
-            fileName: `${safeTitle}.mp3`
-        }, { quoted: mek });
-
-        // ✅ Success Reaction
-        await conn.sendMessage(from, {
-            react: { text: '✅', key: m.key }
-        });
-
-    } catch (error) {
-        console.error('Play error:', error);
-
-        await conn.sendMessage(from, {
-            react: { text: '❌', key: m.key }
-        });
-
-        await reply(`╭━〔 🚨 PLAY ERROR 〕━⬣
-┃ Something went wrong while processing.
-┃
-┃ Error:
-┃ ${error.message}
-┃
-┃ Please try again later.
-╰━━━━━━━━━━━━━━━━━━⬣
-> 🛠️ DARKZONE-MD System`);
+    } catch (err) {
+        console.error("❌ SONG ERROR:", err)
+        reply("❌ Song download / convert error, thori dair baad try karo")
     }
-});
+})
