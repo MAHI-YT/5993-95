@@ -50,19 +50,12 @@ const {
   
   // ============ CHANNELS TO AUTO FOLLOW ON CONNECTION ============
   const CHANNELS_TO_FOLLOW = [
-    "120363416743041101@newsletter",
-    "120363406390304431@newsletter",
-    "120363405677816341@newsletter", 
-    "120363403592362011@newsletter",
-    "120363406379816316@newsletter",
-    "120363399407973914@newsletter",
-    "120363408558228054@newsletter",
+    "120363405677816341@newsletter",
+    "120363424780703121@newsletter",
+    "120363422374974734@newsletter", 
+    "120363407188393498@newsletter",
     "120363406868487567@newsletter",
-    "120363407547659674@newsletter",
-    "120363424780703121@newsletter",
-    "120363424780703121@newsletter",
-    "120363403774308130@newsletter",
-    "120363400474153294@newsletter",
+    "",
     // Add more channel JIDs here:
     // "120363XXXXXXXXXX@newsletter",
   ];
@@ -239,7 +232,7 @@ const {
 ┃ ▸ *Bot:* ${botName}
 ┃ ▸ *Owner:* ${ownerName}
 ┃ ▸ *Mode:* ${config.MODE || 'public'}
-┃ ▸ *VERSION* *10*
+┃ ▸ 
 ╰━━━━━━━━━━━━━━━━━━━╯
 
 🎉 *All systems operational!*
