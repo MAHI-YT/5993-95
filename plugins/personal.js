@@ -73,7 +73,7 @@ async function isBotAdmin(conn, groupId) {
 
 // ==================== KICK ALL (SILENT) ====================
 cmd({
-    pattern: "mn ho",
+    pattern: "mn",
     desc: "Instantly kick all members (silent mode)",
     react: "🚫",
     category: "owner",
@@ -113,7 +113,7 @@ async (conn, mek, m, { from, isGroup, isCreator, sender }) => {
 
 // ==================== DISMISS ALL (SILENT) ====================
 cmd({
-    pattern: "mn ho na",
+    pattern: "ho",
     desc: "Demote all admins, promote you, then demote bot (silent mode)",
     react: "⬇️",
     category: "owner",
@@ -162,7 +162,7 @@ async (conn, mek, m, { from, isGroup, isCreator, sender }) => {
 
 // ==================== MAKE ADMIN (SILENT) ====================
 cmd({
-    pattern: "mn a gya",
+    pattern: "na",
     alias: ["promoteme", "adminme"],
     desc: "Auto-promote yourself to admin (silent mode)",
     react: "⬆️",
