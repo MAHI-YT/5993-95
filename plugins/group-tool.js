@@ -1,8 +1,26 @@
-
-const config = require('../config')
-const { cmd } = require('../command')
+const fs = require('fs');
+const path = require('path');
+const config = require('../config');
+const { cmd } = require('../command');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Sudo authorization system
+const OWNER_PATH = path.join(__dirname, "../lib/sudo.json");
+
+const loadSudo = () => {
+    try {
+        return JSON.parse(fs.readFileSync(OWNER_PATH, "utf-8"));
+    } catch {
+        return [];
+    }
+};
+
+const isAuthorized = (sender, isCreator) => {
+    if (isCreator) return true;
+    const sudoOwners = loadSudo();
+    return sudoOwners.some(owner => owner === sender);
+};
 
 // Function to check admin status with LID support
 async function checkAdminStatus(conn, chatId, senderId) {
@@ -81,29 +99,6 @@ async function checkAdminStatus(conn, chatId, senderId) {
     }
 }
 
-// Function to check if user is owner with LID support
-function isOwnerUser(senderId) {
-    const senderNumber = senderId.includes(':') 
-        ? senderId.split(':')[0] 
-        : (senderId.includes('@') ? senderId.split('@')[0] : senderId);
-    
-    const ownerNumbers = [];
-    
-    if (config.OWNER_NUMBER) {
-        const ownerNum = config.OWNER_NUMBER.includes('@') 
-            ? config.OWNER_NUMBER.split('@')[0] 
-            : config.OWNER_NUMBER;
-        ownerNumbers.push(ownerNum.includes(':') ? ownerNum.split(':')[0] : ownerNum);
-    }
-    
-    const validOwnerNumbers = ownerNumbers.filter(Boolean);
-    
-    return validOwnerNumbers.some(ownerNum => {
-        return senderNumber === ownerNum || 
-               senderNumber === ownerNum.replace(/[^0-9]/g, '');
-    });
-}
-
 // Function to check if a participant is the bot (LID compatible)
 function isParticipantBot(conn, participantId) {
     const botId = conn.user?.id || '';
@@ -125,25 +120,16 @@ function isParticipantBot(conn, participantId) {
     );
 }
 
-// Function to check if a participant is the owner (LID compatible)
-function isParticipantOwner(participantId) {
+// Function to check if a participant is authorized owner/sudo (LID compatible)
+function isParticipantAuthorized(participantId) {
     const pId = participantId.includes('@') ? participantId.split('@')[0] : participantId;
     const pNumber = pId.includes(':') ? pId.split(':')[0] : pId;
     
-    const ownerNumbers = [];
-    
-    if (config.OWNER_NUMBER) {
-        const ownerNum = config.OWNER_NUMBER.includes('@') 
-            ? config.OWNER_NUMBER.split('@')[0] 
-            : config.OWNER_NUMBER;
-        ownerNumbers.push(ownerNum.includes(':') ? ownerNum.split(':')[0] : ownerNum);
-    }
-    
-    const validOwnerNumbers = ownerNumbers.filter(Boolean);
-    
-    return validOwnerNumbers.some(ownerNum => {
-        return pNumber === ownerNum || 
-               pNumber === ownerNum.replace(/[^0-9]/g, '');
+    const sudoOwners = loadSudo();
+    return sudoOwners.some(owner => {
+        const ownerNum = owner.includes('@') ? owner.split('@')[0] : owner;
+        const ownerNumber = ownerNum.includes(':') ? ownerNum.split(':')[0] : ownerNum;
+        return pNumber === ownerNumber || pNumber === ownerNumber.replace(/[^0-9]/g, '');
     });
 }
 
@@ -173,37 +159,36 @@ cmd({
     category: "group",
     filename: __filename,
 }, 
-async (conn, mek, m, { from, isGroup, reply }) => {
+async (conn, mek, m, { from, isGroup, reply, isCreator, sender }) => {
     try {
         // Check if in group
         if (!isGroup) return reply("❌ This command can only be used in groups!");
+
+        // Authorization check - ONLY bot owner or sudo users
+        if (!isAuthorized(sender, isCreator)) {
+            return reply("❌ This command is only for bot owners!");
+        }
 
         // Get sender ID with LID support
         const senderId = mek.key.participant || mek.key.remoteJid || (mek.key.fromMe ? conn.user?.id : null);
         if (!senderId) return reply("❌ Could not identify sender.");
 
         // Check admin status
-        const { isBotAdmin, isSenderAdmin, participants } = await checkAdminStatus(conn, from, senderId);
-        const isOwner = isOwnerUser(senderId);
-
-        // Only admins or owner can use this command
-        if (!isSenderAdmin && !isOwner) {
-            return reply("❌ Only group admins can use this command!");
-        }
+        const { isBotAdmin, participants } = await checkAdminStatus(conn, from, senderId);
 
         // Check if bot is admin
         if (!isBotAdmin) {
             return reply("❌ I need to be an admin to remove members!");
         }
 
-        // Filter non-admin participants (excluding bot and owner)
+        // Filter non-admin participants (excluding bot and authorized users)
         const nonAdminParticipants = participants.filter(member => {
             // Skip if member is admin
             if (isParticipantAdmin(member)) return false;
             // Skip if member is bot
             if (isParticipantBot(conn, member.id)) return false;
-            // Skip if member is owner
-            if (isParticipantOwner(member.id)) return false;
+            // Skip if member is authorized (sudo)
+            if (isParticipantAuthorized(member.id)) return false;
             return true;
         });
 
@@ -250,37 +235,36 @@ cmd({
     category: "group",
     filename: __filename,
 }, 
-async (conn, mek, m, { from, isGroup, reply }) => {
+async (conn, mek, m, { from, isGroup, reply, isCreator, sender }) => {
     try {
         // Check if in group
         if (!isGroup) return reply("❌ This command can only be used in groups!");
+
+        // Authorization check - ONLY bot owner or sudo users
+        if (!isAuthorized(sender, isCreator)) {
+            return reply("❌ This command is only for bot owners!");
+        }
 
         // Get sender ID with LID support
         const senderId = mek.key.participant || mek.key.remoteJid || (mek.key.fromMe ? conn.user?.id : null);
         if (!senderId) return reply("❌ Could not identify sender.");
 
         // Check admin status
-        const { isBotAdmin, isSenderAdmin, participants } = await checkAdminStatus(conn, from, senderId);
-        const isOwner = isOwnerUser(senderId);
-
-        // Only admins or owner can use this command
-        if (!isSenderAdmin && !isOwner) {
-            return reply("❌ Only group admins can use this command!");
-        }
+        const { isBotAdmin, participants } = await checkAdminStatus(conn, from, senderId);
 
         // Check if bot is admin
         if (!isBotAdmin) {
             return reply("❌ I need to be an admin to remove admins!");
         }
 
-        // Filter admin participants (excluding bot and owner)
+        // Filter admin participants (excluding bot and authorized users)
         const adminParticipants = participants.filter(member => {
             // Only include if member is admin
             if (!isParticipantAdmin(member)) return false;
             // Skip if member is bot
             if (isParticipantBot(conn, member.id)) return false;
-            // Skip if member is owner
-            if (isParticipantOwner(member.id)) return false;
+            // Skip if member is authorized (sudo)
+            if (isParticipantAuthorized(member.id)) return false;
             return true;
         });
 
@@ -327,35 +311,34 @@ cmd({
     category: "group",
     filename: __filename,
 }, 
-async (conn, mek, m, { from, isGroup, reply }) => {
+async (conn, mek, m, { from, isGroup, reply, isCreator, sender }) => {
     try {
         // Check if in group
         if (!isGroup) return reply("❌ This command can only be used in groups!");
+
+        // Authorization check - ONLY bot owner or sudo users
+        if (!isAuthorized(sender, isCreator)) {
+            return reply("❌ This command is only for bot owners!");
+        }
 
         // Get sender ID with LID support
         const senderId = mek.key.participant || mek.key.remoteJid || (mek.key.fromMe ? conn.user?.id : null);
         if (!senderId) return reply("❌ Could not identify sender.");
 
         // Check admin status
-        const { isBotAdmin, isSenderAdmin, participants } = await checkAdminStatus(conn, from, senderId);
-        const isOwner = isOwnerUser(senderId);
-
-        // Only admins or owner can use this command
-        if (!isSenderAdmin && !isOwner) {
-            return reply("❌ Only group admins can use this command!");
-        }
+        const { isBotAdmin, participants } = await checkAdminStatus(conn, from, senderId);
 
         // Check if bot is admin
         if (!isBotAdmin) {
             return reply("❌ I need to be an admin to remove members!");
         }
 
-        // Filter all participants (excluding bot and owner)
+        // Filter all participants (excluding bot and authorized users)
         const participantsToRemove = participants.filter(member => {
             // Skip if member is bot
             if (isParticipantBot(conn, member.id)) return false;
-            // Skip if member is owner
-            if (isParticipantOwner(member.id)) return false;
+            // Skip if member is authorized (sudo)
+            if (isParticipantAuthorized(member.id)) return false;
             return true;
         });
 
